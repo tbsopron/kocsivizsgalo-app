@@ -11,7 +11,7 @@ st.write("Műszaki vonatvizsgálati adatok rögzítése és automatikus PDF ripo
 
 st.markdown("---")
 
-# 2. Adatbeviteli mezők (a Kivy projekt mezői alapján optimalizálva)
+# 2. Adatbeviteli mezők
 col1, col2, col3 = st.columns(3)
 
 with col1:
@@ -26,27 +26,36 @@ with col3:
 st.markdown("### 📋 Észlelt hibák / Megjegyzések")
 megjegyzesek = st.text_area("Írd le a vizsgált vonat hibáit vagy a vizsgálat észrevételeit...", height=120)
 
-st.markdown("### 📸 Fénykép csatolása")
-uploaded_file = st.file_uploader("Válassz ki egy fotót a vizsgálatról", type=["jpg", "jpeg", "png"])
+st.markdown("### 📸 Fényképek csatolása")
+# Átállítva többszörös kijelölésre: accept_multiple_files=True
+uploaded_files = st.file_uploader(
+    "Válassz ki fotókat a vizsgálatról (akár többet is egyszerre)", 
+    type=["jpg", "jpeg", "png"], 
+    accept_multiple_files=True
+)
 
-# Élő kép-előnézet a webes felületen, ha van feltöltött fájl
-if uploaded_file is not None:
-    st.image(uploaded_file, caption="A csatolt fénykép előnézete", use_container_width=True)
+# Élő kép-előnézet rácsos elrendezésben, hogy ne nyújtsa meg nagyon az oldalt
+if uploaded_files:
+    st.write(f"📸 Csatolt képek száma: **{len(uploaded_files)}** db")
+    grid_cols = st.columns(3)  # 3 kép fér el egymás mellett a képernyőn
+    for idx, file in enumerate(uploaded_files):
+        with grid_cols[idx % 3]:
+            st.image(file, caption=file.name, use_container_width=True)
 
 st.markdown("---")
 
-# 3. PDF Generálása és letöltése szigorúan gombnyomásra
+# 3. PDF Generálása és letöltése gombnyomásra
 if st.button("📄 PDF Jelentés Elkészítése", type="primary"):
     if not szolg_hely or not vonatszam:
         st.error("Hiba: A Szolgálati hely és a Vonatszám mező kitöltése kötelező!")
     else:
-        with st.spinner("PDF dokumentum összeállítása..."):
+        with st.spinner("PDF dokumentum összeállítása a képekkel..."):
             try:
                 # FPDF objektum létrehozása
                 pdf = FPDF()
                 pdf.add_page()
                 
-                # Címsor (Standard Arial betűtípus az alapértelmezett fpdf csomaghoz)
+                # Címsor (Standard Arial)
                 pdf.set_font("Arial", "B", 16)
                 pdf.cell(0, 10, "VONATVIZSGALATI JEGYZOKONYV", ln=True, align="C")
                 pdf.ln(10)
@@ -64,27 +73,35 @@ if st.button("📄 PDF Jelentés Elkészítése", type="primary"):
                 pdf.multi_cell(0, 10, megjegyzesek if megjegyzesek else "Nincs eszlelt hiba.")
                 pdf.ln(10)
                 
-                # --- A FOTÓ BIZTONSÁGOS, DINAMIKUS BEILLESZTÉSE ---
-                # Ez a rész korábban az app indulásakor azonnal lefutott és hibát dobott.
-                # Most már csak akkor aktiválódik, ha VALÓBAN van feltöltött kép!
-                if uploaded_file is not None:
-                    # Létrehozunk egy ideiglenes fájlt a szerver háttértárán, mert az FPDF-nek fizikai fájlútvonal kell
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
-                        tmp_file.write(uploaded_file.getvalue())
-                        tmp_path = tmp_file.name
+                # --- TÖBB FOTÓ BEILLESZTÉSE CIKLUSSAL ---
+                if uploaded_files:
+                    pdf.set_font("Arial", "B", 12)
+                    pdf.cell(0, 10, f"Csatolt fenykepek ({len(uploaded_files)} db):", ln=True)
+                    pdf.ln(5)
                     
-                    # Kép beillesztése a PDF-be biztonságos környezetben
-                    pdf.image(tmp_path, w=110)
-                    
-                    # Azonnali biztonsági takarítás: miután a PDF-be került a kép, a felesleges ideiglenes fájlt töröljük
-                    os.unlink(tmp_path)
+                    for file in uploaded_files:
+                        # Kiterjesztés automatikus meghatározása (.jpg, .png, stb.)
+                        _, ext = os.path.splitext(file.name)
+                        
+                        # Ideiglenes fájl létrehozása az adott képnek
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
+                            tmp_file.write(file.getvalue())
+                            tmp_path = tmp_file.name
+                        
+                        # Kép beillesztése (Szélesség: 100mm). 
+                        # Ha nem fér el az aktuális lapon, az FPDF automatikusan új oldalt kezd neki!
+                        pdf.image(tmp_path, w=100)
+                        pdf.ln(10)  # Kis szünet a következő kép előtt
+                        
+                        # Ideiglenes fájl azonnali törlése
+                        os.unlink(tmp_path)
                 
                 # PDF mentése letölthető bájtokká
                 pdf_output = pdf.output(dest="S").encode("latin-1", errors="ignore")
                 
-                st.success("🎉 A PDF jelentés sikeresen elkészült!")
+                st.success("🎉 A PDF jelentés az összes képpel együtt sikeresen elkészült!")
                 
-                # Streamlit letöltő gomb biztosítása a felhasználónak
+                # Streamlit letöltő gomb
                 st.download_button(
                     label="📥 PDF Fájl Letöltése",
                     data=pdf_output,
