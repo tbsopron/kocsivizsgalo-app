@@ -11,43 +11,68 @@ st.write("Műszaki vonatvizsgálati adatok rögzítése és automatikus PDF ripo
 
 st.markdown("---")
 
-# 2. Adatbeviteli mezők
-col1, col2, col3 = st.columns(3)
+# Biztosítjuk a fotófeltöltő egyedi azonosítóját a teljes törléshez
+if 'file_uploader_key' not in st.session_state:
+    st.session_state.file_uploader_key = 0
 
+# 2. Adatbeviteli mezők elrendezése párosával (így mobilon is átláthatóbb)
+col1, col2 = st.columns(2)
 with col1:
-    szolg_hely = st.text_input("Szolgálati hely", placeholder="pl. Sopron")
-
+    felhasznalonev = st.text_input("Felhasználónév (Kocsivizsgáló)", key="felhasznalonev", placeholder="pl. Tóth Balázs")
 with col2:
-    vonatszam = st.text_input("Vonatszám", placeholder="pl. 43122")
+    szolg_hely = st.text_input("Szolgálati hely", key="szolg_hely", placeholder="pl. Sopron")
 
+col3, col4 = st.columns(2)
 with col3:
-    vaganyszam = st.text_input("Vágányszám", placeholder="pl. V.")
+    vonatszam = st.text_input("Vonatszám", key="vonatszam", placeholder="pl. 43122")
+with col4:
+    vaganyszam = st.text_input("Vágányszám", key="vaganyszam", placeholder="pl. V.")
 
 st.markdown("### 📋 Észlelt hibák / Megjegyzések")
-megjegyzesek = st.text_area("Írd le a vizsgált vonat hibáit vagy a vizsgálat észrevételeit...", height=120)
+megjegyzesek = st.text_area("Írd le a vizsgált vonat hibáit vagy a vizsgálat észrevételeit...", key="megjegyzesek", height=120)
 
 st.markdown("### 📸 Fényképek csatolása")
-# Átállítva többszörös kijelölésre: accept_multiple_files=True
 uploaded_files = st.file_uploader(
     "Válassz ki fotókat a vizsgálatról (akár többet is egyszerre)", 
     type=["jpg", "jpeg", "png"], 
-    accept_multiple_files=True
+    accept_multiple_files=True,
+    key=f"uploader_{st.session_state.file_uploader_key}"
 )
 
-# Élő kép-előnézet rácsos elrendezésben, hogy ne nyújtsa meg nagyon az oldalt
+# Élő kép-előnézet rácsos elrendezésben
 if uploaded_files:
     st.write(f"📸 Csatolt képek száma: **{len(uploaded_files)}** db")
-    grid_cols = st.columns(3)  # 3 kép fér el egymás mellett a képernyőn
+    grid_cols = st.columns(3)
     for idx, file in enumerate(uploaded_files):
         with grid_cols[idx % 3]:
             st.image(file, caption=file.name, use_container_width=True)
 
 st.markdown("---")
 
+# Gombok elhelyezése egymás mellett
+btn_col1, btn_col2 = st.columns([2, 1])
+
+with btn_col1:
+    generate_pdf = st.button("📄 PDF Jelentés Elkészítése", type="primary")
+
+with btn_col2:
+    # --- ADATOK TÖRLÉSE FUNKCIÓ ---
+    if st.button("🗑️ Adatok törlése", type="secondary"):
+        # Kiürítjük a mezőket a háttértárból
+        st.session_state.felhasznalonev = ""
+        st.session_state.szolg_hely = ""
+        st.session_state.vonatszam = ""
+        st.session_state.vaganyszam = ""
+        st.session_state.megjegyzesek = ""
+        # Megváltoztatjuk a feltöltő kulcsát, így a Streamlit eldobja a korábbi képeket
+        st.session_state.file_uploader_key += 1
+        # Azonnali oldalfrissítés a tiszta állapot megjelenítéséhez
+        st.rerun()
+
 # 3. PDF Generálása és letöltése gombnyomásra
-if st.button("📄 PDF Jelentés Elkészítése", type="primary"):
-    if not szolg_hely or not vonatszam:
-        st.error("Hiba: A Szolgálati hely és a Vonatszám mező kitöltése kötelező!")
+if generate_pdf:
+    if not felhasznalonev or not szolg_hely or not vonatszam:
+        st.error("Hiba: A Felhasználónév, Szolgálati hely és a Vonatszám mezők kitöltése kötelező!")
     else:
         with st.spinner("PDF dokumentum összeállítása a képekkel..."):
             try:
@@ -60,8 +85,9 @@ if st.button("📄 PDF Jelentés Elkészítése", type="primary"):
                 pdf.cell(0, 10, "VONATVIZSGALATI JEGYZOKONYV", ln=True, align="C")
                 pdf.ln(10)
                 
-                # Alapadatok beírása
+                # Alapadatok beírása (A felhasználónévvel kiegészítve)
                 pdf.set_font("Arial", "", 12)
+                pdf.cell(0, 10, f"Kocsivizsgalo: {felhasznalonev}", ln=True)
                 pdf.cell(0, 10, f"Szolgalati hely: {szolg_hely}", ln=True)
                 pdf.cell(0, 10, f"Vonatszam: {vonatszam}", ln=True)
                 pdf.cell(0, 10, f"Vaganyszam: {vaganyszam}", ln=True)
@@ -80,28 +106,22 @@ if st.button("📄 PDF Jelentés Elkészítése", type="primary"):
                     pdf.ln(5)
                     
                     for file in uploaded_files:
-                        # Kiterjesztés automatikus meghatározása (.jpg, .png, stb.)
                         _, ext = os.path.splitext(file.name)
                         
-                        # Ideiglenes fájl létrehozása az adott képnek
                         with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
                             tmp_file.write(file.getvalue())
                             tmp_path = tmp_file.name
                         
-                        # Kép beillesztése (Szélesség: 100mm). 
-                        # Ha nem fér el az aktuális lapon, az FPDF automatikusan új oldalt kezd neki!
                         pdf.image(tmp_path, w=100)
-                        pdf.ln(10)  # Kis szünet a következő kép előtt
+                        pdf.ln(10)
                         
-                        # Ideiglenes fájl azonnali törlése
                         os.unlink(tmp_path)
                 
                 # PDF mentése letölthető bájtokká
                 pdf_output = pdf.output(dest="S").encode("latin-1", errors="ignore")
                 
-                st.success("🎉 A PDF jelentés az összes képpel együtt sikeresen elkészült!")
+                st.success("🎉 A PDF jelentés sikeresen elkészült!")
                 
-                # Streamlit letöltő gomb
                 st.download_button(
                     label="📥 PDF Fájl Letöltése",
                     data=pdf_output,
