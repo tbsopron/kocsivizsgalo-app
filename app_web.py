@@ -3,163 +3,36 @@ from fpdf import FPDF
 import tempfile
 import os
 from datetime import datetime
-from PIL import Image
-import urllib.parse
-import re
+from PIL import Image  # Képhibák végleges kiküszöbölésére
 
 # 1. Oldal konfigurációja
 st.set_page_config(page_title="GYSEV Kocsivizsgáló App", page_icon="🚂", layout="centered")
 
-# --- ÉKEZETMENTESÍTŐ FUNKCIÓ A STANDARD FPDF-HEZ ---
-def ekezetmentesit(szoveg):
-    if not szoveg:
-        return ""
-    trans_table = str.maketrans(
-        "áéíóöőúüűÁÉÍÓÖŐÚÜŰ",
-        "aeiooouuuAEIOOOUUU"
-    )
-    return szoveg.translate(trans_table)
-
-# --- GYSEV ARCULAT CSS ÉS JAVÍTÁSOK ---
-st.markdown("""
-    <style>
-        div.stButton > button[kind="primary"] {
-            background-color: #007A33 !important;
-            color: #FFFFFF !important;
-            border-radius: 8px;
-            border: 2px solid #FFD100 !important;
-            font-weight: bold;
-        }
-        div.stButton > button[kind="primary"]:hover {
-            background-color: #005F26 !important;
-            color: #FFD100 !important;
-        }
-        div.stButton > button[kind="secondary"] {
-            background-color: #6C757D !important;
-            color: white !important;
-            border-radius: 8px;
-            border: none;
-        }
-        div.stButton > button[kind="secondary"]:hover {
-            background-color: #5A6268 !important;
-        }
-        div[data-testid="stRadio"] > label {
-            color: #007A33 !important;
-            font-weight: bold !important;
-            font-size: 16px;
-        }
-        .mail-button {
-            display: inline-block;
-            padding: 0.5rem 1rem;
-            background-color: #FFD100 !important;
-            color: #007A33 !important;
-            font-weight: bold;
-            text-decoration: none;
-            border-radius: 8px;
-            border: 2px solid #007A33;
-            text-align: center;
-            margin-top: 10px;
-            width: 100%;
-        }
-        .mail-button:hover {
-            background-color: #E6BC00 !important;
-            color: #005F26 !important;
-        }
-        h1 { color: #007A33 !important; }
-        h3 {
-            color: #007A33 !important;
-            border-bottom: 2px solid #FFD100;
-            padding-bottom: 5px;
-        }
-        .kocsi-box {
-            padding: 15px;
-            border: 1px solid #007A33;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            background-color: #F8F9FA;
-        }
-    </style>
-""", unsafe_allow_html=True)
-
 st.title("🚂 GYSEV Kocsivizsgáló Webalkalmazás")
-st.write("**Műszaki vonatvizsgálati és fékpróba adatok rögzítése és PDF generálás**")
+st.write("Műszaki vonatvizsgálati adatok rögzítése és automatikus PDF riport generálása")
 
 st.markdown("---")
 
-# --- MUNKAMENET ÁLLAPOTOK (SESSION STATE) ---
-if 'file_uploader_keys' not in st.session_state:
-    st.session_state.file_uploader_keys = {}
+# Kezdeti állapotok beállítása a memóriában
+if 'file_uploader_key' not in st.session_state:
+    st.session_state.file_uploader_key = 0
 if 'pdf_data' not in st.session_state:
     st.session_state.pdf_data = None
 if 'vonatszam_mentett' not in st.session_state:
     st.session_state.vonatszam_mentett = ""
-if 'show_email_dialog' not in st.session_state:
-    st.session_state.show_email_dialog = False
-if 'hibas_kocsik' not in st.session_state:
-    st.session_state.hibas_kocsik = [{"kocsiszam": "", "leiras": "", "kepek": []}]
 
-# --- KOCSISZÁM FORMÁZÓ FUNKCIÓ ---
-def formal_kocsiszam(nyers_szam):
-    szamok = re.sub(r'\D', '', nyers_szam)
-    if len(szamok) == 12:
-        return f"{szamok[0:2]} {szamok[2:4]} {szamok[4:8]} {szamok[8:11]}-{szamok[11]}"
-    return nyers_szam
-
-# --- TELJES TÖRLÉSI FUNKCIÓ ---
+# --- BIZTONSÁGOS TÖRLÉSI FUNKCIÓ (CALLBACK) ---
 def adatok_torlese_callback():
     st.session_state.felhasznalonev = ""
     st.session_state.szolg_hely = ""
     st.session_state.vonatszam = ""
     st.session_state.vaganyszam = ""
-    
-    for kulcs in st.session_state.file_uploader_keys.keys():
-        st.session_state.file_uploader_keys[kulcs] += 1
-        
-    st.session_state.hibas_kocsik = [{"kocsiszam": "", "leiras": "", "kepek": []}]
+    st.session_state.megjegyzesek = ""
+    st.session_state.file_uploader_key += 1
     st.session_state.pdf_data = None
     st.session_state.vonatszam_mentett = ""
-    st.session_state.show_email_dialog = False
 
-# --- 📧 EMAIL DIALÓGUS DEKLARÁCIÓ (Globális térben) ---
-@st.dialog("📧 Küldés e-mailben")
-def email_kuldes_dialog():
-    st.write("Szeretnéd azonnal továbbítani a riportot e-mailben?")
-    st.info("💡 **Fontos:** Először mentsd el a PDF-et a készülékre, majd a megnyíló e-mailben manuálisan csatold azt!")
-    
-    st.download_button(
-        label="📥 1. Lépés: PDF Letöltése/Mentése",
-        data=st.session_state.pdf_data,
-        file_name=f"Kocsivizsgalo_Jelentes_{st.session_state.vonatszam_mentett}.pdf",
-        mime="application/pdf",
-        key="dialog_download"
-    )
-    
-    tiszta_muvelet = muvelet.replace(" 🔍", "").replace(" 🛑", "")
-    subject = f"GYSEV {tiszta_muvelet} Jelentes - Vonat: {st.session_state.vonatszam_mentett}"
-    body = f"Tisztelt Cimzett!\n\nMellekelten kuldom a(z) {tiszta_muvelet} jegyzokonyvet.\n\nVonatszam: {st.session_state.vonatszam_mentett}\nEredmeny: {ekezetmentesit(kivalasztott_statusz)}\n\nUdvözlettel,\n{ekezetmentesit(st.session_state.felhasznalonev)}"
-    
-    mailto_url = f"mailto:?subject={urllib.parse.quote(subject)}&body={urllib.parse.quote(body)}"
-    
-    d_col1, d_col2 = st.columns(2)
-    with d_col1:
-        st.markdown(f'<a href="{mailto_url}" target="_blank" class="mail-button">🚀 2. Lépés: OK (E-mail)</a>', unsafe_allow_html=True)
-    with d_col2:
-        if st.button("❌ Bezárás", use_container_width=True):
-            st.session_state.show_email_dialog = False
-            st.rerun()
-
-# --- ⚙️ MŰVELET KIVÁLASZTÁSA ---
-st.markdown("### 🛠️ Végzett munkafolyamat kiválasztása")
-muvelet = st.radio(
-    "Válassz műveletet:",
-    ["Vonatvizsgálat 🔍", "Fékpróba 🛑"],
-    horizontal=True
-)
-
-st.markdown("---")
-
-# 2. Alapadatok elrendezése
-st.markdown("### 🏢 Vizsgálati Alapadatok")
+# 2. Adatbeviteli mezők elrendezése
 col1, col2 = st.columns(2)
 with col1:
     felhasznalonev = st.text_input("Felhasználónév (Kocsivizsgáló)", key="felhasznalonev", placeholder="pl. Tóth Balázs")
@@ -172,175 +45,99 @@ with col3:
 with col4:
     vaganyszam = st.text_input("Vágányszám", key="vaganyszam", placeholder="pl. V.")
 
+# Élő, automatikus időbélyegző a felületen és a jelentésben
 aktualis_ido_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 st.text_input("Vizsgálat időpontja (Automatikus)", value=aktualis_ido_str, disabled=True)
 
-# --- 📜 DINAMIKUS ERDMÉNY / SABLONVÁLASZTÓ ---
-st.markdown("### 📢 Vizsgálat eredménye / Állapota")
-if "Fékpróba" in muvelet:
-    sablonszoveg_opciok = ["Fék rendben", "Az alábbi kocsik nem fékeznek:"]
-else:
-    sablonszoveg_opciok = ["Vonat rendben", "Vonatban a következő hibákat találtam:"]
+st.markdown("### 📋 Észlelt hibák / Megjegyzések")
+megjegyzesek = st.text_area("Írd le a vizsgált vonat hibáit vagy a vizsgálat észrevételeit...", key="megjegyzesek", height=120)
 
-kivalasztott_statusz = st.selectbox("Válaszd ki a megfelelő megállapítást:", sablonszoveg_opciok)
+st.markdown("### 📸 Fényképek csatolása")
+uploaded_files = st.file_uploader(
+    "Válassz ki fotókat a vizsgálatról (akár többet is egyszerre)", 
+    type=["jpg", "jpeg", "png"], 
+    accept_multiple_files=True,
+    key=f"uploader_{st.session_state.file_uploader_key}"
+)
 
-# --- 📋 DINAMIKUS KOCSI-HIBA SZEKCIÓ ---
-st.markdown("### 📋 Észlelt kocsik / hibák részletezése")
-
-for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
-    st.markdown(f'<div class="kocsi-box">', unsafe_allow_html=True)
-    st.write(f"**{idx + 1}. Érintett kocsi adatai**")
-    
-    k1, k2 = st.columns([1, 2])
-    with k1:
-        nyers_kocsiszam = st.text_input(f"Kocsiszám (12 jegyű)", value=kocsi["kocsiszam"], key=f"kocsi_szam_{idx}", placeholder="pl. 315566123451")
-        formazott = formal_kocsiszam(nyers_kocsiszam)
-        if len(re.sub(r'\D', '', nyers_kocsiszam)) == 12:
-            st.success(f"Formátum OK: `{formazott}`")
-            st.session_state.hibas_kocsik[idx]["kocsiszam"] = formazott
-        elif nyers_kocsiszam != "":
-            st.warning("⚠️ Pontosan 12 számjegy szükséges!")
-            st.session_state.hibas_kocsik[idx]["kocsiszam"] = nyers_kocsiszam
-
-    with k2:
-        st.session_state.hibas_kocsik[idx]["leiras"] = st.text_area(
-            f"Hiba / Észrevétel leírása ({idx + 1}. kocsi)", 
-            value=kocsi["leiras"], 
-            key=f"kocsi_leiras_{idx}", 
-            height=68,
-            placeholder="pl. Nem működik a kormányszelep / Laposodás..."
-        )
-    
-    if idx not in st.session_state.file_uploader_keys:
-        st.session_state.file_uploader_keys[idx] = 0
-        
-    uploaded_files = st.file_uploader(
-        f"Fotók csatolása a(z) {idx + 1}. kocsihoz", 
-        type=["jpg", "jpeg", "png"], 
-        accept_multiple_files=True,
-        key=f"kocsi_foto_{idx}_{st.session_state.file_uploader_keys[idx]}"
-    )
-    st.session_state.hibas_kocsik[idx]["kepek"] = uploaded_files if uploaded_files else []
-    
-    if uploaded_files:
-        grid_cols = st.columns(4)
-        for f_idx, file in enumerate(uploaded_files):
-            with grid_cols[f_idx % 4]:
-                st.image(file, caption=file.name, use_container_width=True)
-                
-    st.markdown('</div>', unsafe_allow_html=True)
-
-c_btn1, c_btn2, _ = st.columns([1, 1, 2])
-with c_btn1:
-    if st.button("➕ Új hiba hozzáadása", use_container_width=True):
-        st.session_state.hibas_kocsik.append({"kocsiszam": "", "leiras": "", "kepek": []})
-        st.rerun()
-with c_btn2:
-    if len(st.session_state.hibas_kocsik) > 1:
-        if st.button("➖ Utolsó eltávolítása", use_container_width=True):
-            st.session_state.hibas_kocsik.pop()
-            st.rerun()
+if uploaded_files:
+    st.write(f"📸 Csatolt képek száma: **{len(uploaded_files)}** db")
+    grid_cols = st.columns(3)
+    for idx, file in enumerate(uploaded_files):
+        with grid_cols[idx % 3]:
+            st.image(file, caption=file.name, use_container_width=True)
 
 st.markdown("---")
 
+# Gombok elhelyezése
 btn_col1, btn_col2 = st.columns([2, 1])
+
 with btn_col1:
     generate_pdf = st.button("📄 PDF Jelentés Elkészítése", type="primary")
+
 with btn_col2:
     st.button("🗑️ Adatok törlése", type="secondary", on_click=adatok_torlese_callback)
 
-# 3. PDF Generálása ékezetmentesítéssel szinkronizálva
+# 3. PDF Generálása gombnyomásra
 if generate_pdf:
     if not felhasznalonev or not szolg_hely or not vonatszam:
         st.error("Hiba: A Felhasználónév, Szolgálati hely és a Vonatszám mezők kitöltése kötelező!")
     else:
-        with st.spinner("PDF dokumentum összeállítása..."):
+        with st.spinner("PDF dokumentum összeállítása a képekkel..."):
             try:
                 pdf = FPDF()
                 pdf.add_page()
                 
-                tiszta_muvelet = muvelet.replace(" 🔍", "").replace(" 🛑", "").upper()
+                # Címsor
                 pdf.set_font("Arial", "B", 16)
-                pdf.cell(0, 10, f"{ekezetmentesit(tiszta_muvelet)} JEGYZOKONYV", ln=True, align="C")
+                pdf.cell(0, 10, "VONATVIZSGALATI JEGYZOKONYV", ln=True, align="C")
                 pdf.ln(10)
                 
+                # Alapadatok + Időbélyegző rögzítése a PDF-ben
                 pdf.set_font("Arial", "", 12)
-                pdf.cell(0, 8, f"Kocsivizsgalo: {ekezetmentesit(felhasznalonev)}", ln=True)
-                pdf.cell(0, 8, f"Szolgalati hely: {ekezetmentesit(szolg_hely)}", ln=True)
-                pdf.cell(0, 8, f"Vonatszam: {ekezetmentesit(vonatszam)}", ln=True)
-                pdf.cell(0, 8, f"Vaganyszam: {ekezetmentesit(vaganyszam)}", ln=True)
-                pdf.cell(0, 8, f"Muvelet tipusa: {ekezetmentesit(tiszta_muvelet)}", ln=True)
-                pdf.cell(0, 8, f"Idopont: {aktualis_ido_str}", ln=True)
-                pdf.ln(8)
-                
-                pdf.set_font("Arial", "B", 12)
-                pdf.cell(0, 8, f"VIZSGALAT EREDMENYE: {ekezetmentesit(kivalasztott_statusz).upper()}", ln=True)
+                pdf.cell(0, 10, f"Kocsivizsgalo: {felhasznalonev}", ln=True)
+                pdf.cell(0, 10, f"Szolgalati hely: {szolg_hely}", ln=True)
+                pdf.cell(0, 10, f"Vonatszam: {vonatszam}", ln=True)
+                pdf.cell(0, 10, f"Vaganyszam: {vaganyszam}", ln=True)
+                pdf.cell(0, 10, f"Vizsgalat idopontja: {aktualis_ido_str}", ln=True)
                 pdf.ln(5)
                 
-                van_adat = any(kocsi['kocsiszam'] or kocsi['leiras'] or kocsi['kepek'] for kocsi in st.session_state.hibas_kocsik)
+                # Megjegyzések
+                pdf.cell(0, 10, "Hibak / Megjegyzesek:", ln=True)
+                pdf.set_font("Arial", "I", 11)
+                pdf.multi_cell(0, 10, megjegyzesek if megjegyzesek else "Nincs eszlelt hiba.")
+                pdf.ln(10)
                 
-                if van_adat:
-                    pdf.set_font("Arial", "B", 14)
-                    pdf.cell(0, 10, "ERINTETT KOCSIK ES ESZREVETELEK:", ln=True)
-                    pdf.ln(2)
+                # Fotók feldolgozása és beillesztése
+                if uploaded_files:
+                    pdf.set_font("Arial", "B", 12)
+                    pdf.cell(0, 10, f"Csatolt fenykepek ({len(uploaded_files)} db):", ln=True)
+                    pdf.ln(5)
                     
-                    for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
-                        if not kocsi['kocsiszam'] and not kocsi['leiras'] and not kocsi['kepek']:
-                            continue
-                            
-                        pdf.set_font("Arial", "B", 12)
-                        kocsi_fejlec = f"{idx + 1}. Kocsiszam: {ekezetmentesit(kocsi['kocsiszam'] if kocsi['kocsiszam'] else 'Nincs megadva')}"
-                        pdf.cell(0, 8, kocsi_fejlec, ln=True)
+                    for file in uploaded_files:
+                        img = Image.open(file)
+                        if img.mode in ("RGBA", "P"):
+                            img = img.convert("RGB")  # Átlátszósági réteg törlése a PDF kompatibilitás miatt
                         
-                        pdf.set_font("Arial", "", 11)
-                        pdf.cell(0, 6, "Reszletek / Leiras:", ln=True)
-                        pdf.set_font("Arial", "I", 11)
-                        pdf.multi_cell(0, 6, ekezetmentesit(kocsi["leiras"] if kocsi["leiras"] else "Nincs kulon leiras megadva."))
-                        pdf.ln(4)
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
+                            img.save(tmp_file, format="JPEG", quality=85)
+                            tmp_path = tmp_file.name
                         
-                        if kocsi["kepek"]:
-                            pdf.set_font("Arial", "B", 10)
-                            pdf.cell(0, 6, f"Csatolt fotok ({len(kocsi['kepek'])} db):", ln=True)
-                            pdf.ln(2)
-                            
-                            for img_file in kocsi["kepek"]:
-                                img = Image.open(img_file)
-                                if img.mode in ("RGBA", "P"):
-                                    img = img.convert("RGB")
-                                
-                                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
-                                    img.save(tmp_file, format="JPEG", quality=85)
-                                    tmp_path = tmp_file.name
-                                
-                                # Biztonságos magasságkezelés (90mm széles kép esetén)
-                                pdf.image(tmp_path, w=90)
-                                pdf.ln(5)
-                                os.unlink(tmp_path)
-                        
-                        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-                        pdf.ln(5)
-                else:
-                    pdf.set_font("Arial", "I", 12)
-                    pdf.cell(0, 10, "Kulon listazando hiba vagy rendellenesseg nem lett rogzitve.", ln=True)
+                        pdf.image(tmp_path, w=100)
+                        pdf.ln(10)
+                        os.unlink(tmp_path)
                 
                 st.session_state.pdf_data = pdf.output(dest="S").encode("latin-1", errors="ignore")
                 st.session_state.vonatszam_mentett = vonatszam
-                st.session_state.show_email_dialog = True
-                st.success("🎉 A strukturált PDF jelentés elkészült!")
-                st.rerun()
+                st.success("🎉 A PDF jelentés sikeresen elkészült!")
                 
             except Exception as e:
                 st.error(f"Hiba történt a PDF generálása közben: {e}")
 
-# --- DIALÓGUS MEGJELENÍTÉSE ---
-if st.session_state.show_email_dialog and st.session_state.pdf_data is not None:
-    email_kuldes_dialog()
-
-# 5. Statikus Letöltés gomb a főoldalon
-if st.session_state.pdf_data is not None and not st.session_state.show_email_dialog:
-    st.markdown("### 📄 Elkészült jelentés")
+# 4. Letöltés gomb megjelenítése (ha a PDF már elkészült)
+if st.session_state.pdf_data is not None:
     st.download_button(
-        label="📥 PDF Fájl Letöltése újra",
+        label="📥 PDF Fájl Letöltése",
         data=st.session_state.pdf_data,
         file_name=f"Kocsivizsgalo_Jelentes_{st.session_state.vonatszam_mentett}.pdf",
         mime="application/pdf"
