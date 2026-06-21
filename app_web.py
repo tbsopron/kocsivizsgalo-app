@@ -3,6 +3,7 @@ from fpdf import FPDF
 import tempfile
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo  # Python 3.9+ időzóna kezelés
 from PIL import Image
 import urllib.parse
 import re
@@ -120,7 +121,11 @@ def adatok_torlese_callback():
     st.session_state.vonatszam_mentett = ""
     st.session_state.show_email_dialog = False
 
-# --- 📧 EMAIL DIALÓGUS DEKLARÁCIÓ (BIZTONSÁGOSAN PARAMÉTEREZVE) ---
+# --- IDŐZÓNA ÉS AKTUÁLIS IDŐ MEGHATÁROZÁSA ---
+budapest_tz = ZoneInfo("Europe/Budapest")
+aktualis_ido_str = datetime.now(budapest_tz).strftime("%Y-%m-%d %H:%M")
+
+# --- 📧 EMAIL DIALÓGUS DEKLARÁCIÓ ---
 @st.dialog("📧 Küldés e-mailben")
 def email_kuldes_dialog(aktualis_muvelet, statusz):
     st.write("Szeretnéd azonnal továbbítani a riportot e-mailben?")
@@ -172,7 +177,8 @@ with col3:
 with col4:
     st.text_input("Vágányszám", key="vaganyszam", placeholder="pl. V.")
 
-st.text_input("Vizsgálat időpontja (Aktuális idő)", value=datetime.now().strftime("%Y-%m-%d %H:%M"), disabled=True)
+# Mindig a friss budapesti időt mutatja a képernyőn az oldal újratöltődésekor
+st.text_input("Vizsgálat időpontja (Aktuális idő)", value=aktualis_ido_str, disabled=True)
 
 # --- 📜 DINAMIKUS ERDMÉNY / SABLONVÁLASZTÓ ---
 st.markdown("### 📢 Vizsgálat eredménye / Állapota")
@@ -184,7 +190,7 @@ else:
 kivalasztott_statusz = st.selectbox("Válaszd ki a megfelelő megállapítást:", sablonszoveg_opciok)
 
 # --- 📋 DINAMIKUS KOCSI-HIBA SZEKCIÓ ---
-st.markdown("### 📋 Észlelt kocsik / hibák részletezésese")
+st.markdown("### 📋 Észlelt kocsik / hibák részletezése")
 
 if not st.session_state.hibas_kocsik:
     st.info("💡 Minden rendben? Ha hibás kocsit/fotót akarsz hozzáadni, nyomd meg a lenti 'Új kocsi hozzáadása' gombot.")
@@ -261,7 +267,8 @@ if generate_pdf:
     else:
         with st.spinner("PDF dokumentum összeállítása..."):
             try:
-                pontos_lezarasi_ido = datetime.now().strftime("%Y-%m-%d %H:%M")
+                # KRITIKUS JAVÍTÁS: A gombnyomás pillanatában kérjük le a hajszálpontos budapesti időt!
+                pontos_lezarasi_ido = datetime.now(budapest_tz).strftime("%Y-%m-%d %H:%M")
                 
                 pdf = FPDF()
                 pdf.add_page()
@@ -348,7 +355,7 @@ if generate_pdf:
             except Exception as e:
                 st.error(f"Hiba történt a PDF generálása közben: {e}")
 
-# --- DIALÓGUS MEGJELENÍTÉSE (ÁTADVA A KRITIKUS VÁLTOZÓKAT) ---
+# --- DIALÓGUS MEGJELENÍTÉSE ---
 if st.session_state.show_email_dialog and st.session_state.pdf_data is not None:
     email_kuldes_dialog(muvelet, kivalasztott_statusz)
 
