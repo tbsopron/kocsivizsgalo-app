@@ -10,7 +10,7 @@ import re
 # 1. Oldal konfigurációja
 st.set_page_config(page_title="GYSEV Kocsivizsgáló App", page_icon="🚂", layout="centered")
 
-# --- GYSEV ARCULAT CSS ---
+# --- GYSEV ARCULAT CSS ÉS KAMERA AKTIVÁLÓ JAVÍTÁS ---
 st.markdown("""
     <style>
         div.stButton > button[kind="primary"] {
@@ -63,6 +63,16 @@ st.markdown("""
             background-color: #F8F9FA;
         }
     </style>
+    
+    <script>
+        // Megkeressük a fájlfeltöltőket és engedélyezzük a mobil kamerát közvetlenül is, ha rákattintanak
+        document.addEventListener("DOMContentLoaded", function() {
+            const inputs = document.querySelectorAll('input[type="file"]');
+            inputs.forEach(input => {
+                input.setAttribute("accept", "image/*");
+            });
+        });
+    </script>
 """, unsafe_allow_html=True)
 
 st.title("🚂 GYSEV Kocsivizsgáló Webalkalmazás")
@@ -80,33 +90,27 @@ if 'vonatszam_mentett' not in st.session_state:
 if 'show_email_dialog' not in st.session_state:
     st.session_state.show_email_dialog = False
 
-# Dinamikus kocsihiba lista inicializálása
 if 'hibas_kocsik' not in st.session_state:
     st.session_state.hibas_kocsik = [{"kocsiszam": "", "leiras": "", "kepek": []}]
 
-# --- KOCSISZÁM FORMÁZÓ ÉS ELLENŐRZŐ FUNKCIÓ ---
+# --- KOCSISZÁM FORMÁZÓ FUNKCIÓ ---
 def formal_kocsiszam(nyers_szam):
     szamok = re.sub(r'\D', '', nyers_szam)
     if len(szamok) == 12:
         return f"{szamok[0:2]} {szamok[2:4]} {szamok[4:8]} {szamok[8:11]}-{szamok[11]}"
     return nyers_szam
 
-# --- BIZTONSÁGOS, TELJES TÖRLÉSI FUNKCIÓ (CALLBACK) ---
+# --- TELJES TÖRLÉSI FUNKCIÓ ---
 def adatok_torlese_callback():
-    # 1. Alapadatok kiürítése
     st.session_state.felhasznalonev = ""
     st.session_state.szolg_hely = ""
     st.session_state.vonatszam = ""
     st.session_state.vaganyszam = ""
     
-    # 2. Képfeltöltők kényszerített alaphelyzetbe állítása (kulcsok léptetésével)
     for kulcs in st.session_state.file_uploader_keys.keys():
         st.session_state.file_uploader_keys[kulcs] += 1
         
-    # 3. Kocsik listájának teljes visszaállítása 1 darab teljesen üres mezőre
     st.session_state.hibas_kocsik = [{"kocsiszam": "", "leiras": "", "kepek": []}]
-    
-    # 4. Mentett PDF adatok és ablakok törlése
     st.session_state.pdf_data = None
     st.session_state.vonatszam_mentett = ""
     st.session_state.show_email_dialog = False
@@ -151,7 +155,7 @@ for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
             value=kocsi["leiras"], 
             key=f"kocsi_leiras_{idx}", 
             height=68,
-            placeholder="pl. 4.2.1 Laposodás a futófelületen, jobb 2-es kerék..."
+            placeholder="pl. 4.2.1 Laposodás a futófelületen..."
         )
     
     if idx not in st.session_state.file_uploader_keys:
@@ -173,7 +177,6 @@ for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
                 
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Új kocsi hozzáadása és utolsó eltávolítása gombok
 c_btn1, c_btn2, _ = st.columns([1, 1, 2])
 with c_btn1:
     if st.button("➕ Új kocsi hozzáadása", use_container_width=True):
@@ -187,14 +190,13 @@ with c_btn2:
 
 st.markdown("---")
 
-# Fő akciógombok
 btn_col1, btn_col2 = st.columns([2, 1])
 with btn_col1:
     generate_pdf = st.button("📄 PDF Jelentés Elkészítése", type="primary")
 with btn_col2:
     st.button("🗑️ Adatok törlése", type="secondary", on_click=adatok_torlese_callback)
 
-# 3. PDF Generálása dinamikus kocsikkal
+# 3. PDF Generálása
 if generate_pdf:
     if not felhasznalonev or not szolg_hely or not vonatszam:
         st.error("Hiba: A Felhasználónév, Szolgálati hely és a Vonatszám mezők kitöltése kötelező!")
@@ -204,12 +206,10 @@ if generate_pdf:
                 pdf = FPDF()
                 pdf.add_page()
                 
-                # Fejléc
                 pdf.set_font("Arial", "B", 16)
                 pdf.cell(0, 10, "VONATVIZSGALATI JEGYZOKONYV", ln=True, align="C")
                 pdf.ln(10)
                 
-                # Alapadatok
                 pdf.set_font("Arial", "", 12)
                 pdf.cell(0, 8, f"Kocsivizsgalo: {felhasznalonev}", ln=True)
                 pdf.cell(0, 8, f"Szolgalati hely: {szolg_hely}", ln=True)
@@ -218,7 +218,6 @@ if generate_pdf:
                 pdf.cell(0, 8, f"Vizsgalat idopontja: {aktualis_ido_str}", ln=True)
                 pdf.ln(10)
                 
-                # Kocsihibák bejárása a PDF-ben
                 pdf.set_font("Arial", "B", 14)
                 pdf.cell(0, 10, "ESZLELT KOCSIHIBAK RESZLETEZESE:", ln=True)
                 pdf.ln(2)
@@ -263,14 +262,14 @@ if generate_pdf:
             except Exception as e:
                 st.error(f"Hiba történt a PDF generálása közben: {e}")
 
-# --- 4. EMAIL DIALÓGUS ---
+# --- 4. EMAIL DIALÓGUS PONTOSÍTOTT ÚTMUTATÓVAL ---
 @st.dialog("📧 Küldés e-mailben")
 def email_kuldes_dialog():
     st.write("Szeretnéd azonnal továbbítani a riportot e-mailben?")
-    st.info("💡 **Fontos:** Először mentsd el a PDF-et a készülékre, majd a megnyíló e-mailben csatold azt!")
+    st.warning("⚠️ **Mobiltelefonos használat esetén fontos lépések:**\n1. Kattints az **1. Lépés** gombra a mentéshez.\n2. Kattints a **2. Lépés** gombra az e-mail megnyitásához.\n3. A megnyíló e-mailben a gemkapocs ikonnal manuálisan csatold a letöltött PDF-et!")
     
     st.download_button(
-        label="📥 1. Lépés: PDF Letöltése/Mentése",
+        label="📥 1. Lépés: PDF Letöltése/Mentése a telefonra",
         data=st.session_state.pdf_data,
         file_name=f"Kocsivizsgalo_Jelentes_{st.session_state.vonatszam_mentett}.pdf",
         mime="application/pdf",
