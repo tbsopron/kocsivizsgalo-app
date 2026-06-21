@@ -221,7 +221,7 @@ for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
         if idx not in st.session_state.file_uploader_keys:
             st.session_state.file_uploader_keys[idx] = 0
             
-        # --- KÖZVETLEN GOMBOS MEGOLDÁS (KAMERA VAGY FÁJL VÁLASZTÁS MOBILON) ---
+        # --- BIZTONSÁGOS KÉPFELTÖLTŐ ÉS MENTŐ MODUL ---
         st.write(f"*Fotó hozzáadása a(z) {idx + 1}. kocsihoz:*")
         
         feltoltott_kep = st.file_uploader(
@@ -230,20 +230,18 @@ for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
             key=f"kocsi_foto_{idx}_{st.session_state.file_uploader_keys[idx]}"
         )
         
-        # Kép feldolgozása és elfordulás javítása
-        if feltoltott_kep:
+        # Ha a felhasználó lőtt új képet, elmentjük fixen a session_state-be
+        if feltoltott_kep is not None:
             try:
                 img = Image.open(feltoltott_kep)
-                # Mobilos EXIF elfordulás korrekciója, hogy ne legyen fejjel lefelé a kép
-                img = ImageOps.exif_transpose(img)
+                img = ImageOps.exif_transpose(img)  # Elfordulás javítása
                 st.session_state.hibas_kocsik[idx]["kepek"] = [img]
-                
-                # Előnézet az applikációban
-                st.image(img, caption=f"Csatolt hiba fotó", use_container_width=True)
             except Exception as e:
                 st.error(f"Kép beolvasási hiba: {e}")
-        else:
-            st.session_state.hibas_kocsik[idx]["kepek"] = []
+                
+        # Kirajzolás a mentett session_state-ből (így biztosan megmarad a képernyőn!)
+        if st.session_state.hibas_kocsik[idx]["kepek"]:
+            st.image(st.session_state.hibas_kocsik[idx]["kepek"][0], caption="Csatolt hiba fotó mentve", use_container_width=True)
 
 c_btn1, c_btn2, _ = st.columns([1.5, 1.5, 2])
 with c_btn1:
@@ -264,7 +262,7 @@ with btn_col1:
 with btn_col2:
     st.button("🗑️ Adatok törlése", type="secondary", on_click=adatok_torlese_callback)
 
-# 4. PDF Generálása a stabil fpdf könyvtárral
+# 4. PDF Generálása fpdf könyvtárral
 if generate_pdf:
     felhasznalonev = st.session_state.felhasznalonev
     szolg_hely = st.session_state.szolg_hely
