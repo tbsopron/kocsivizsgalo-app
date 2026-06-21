@@ -3,7 +3,7 @@ from fpdf import FPDF
 import tempfile
 import os
 from datetime import datetime
-from zoneinfo import ZoneInfo  # Python 3.9+ időzóna kezelés
+from zoneinfo import ZoneInfo
 from PIL import Image, ImageOps
 import urllib.parse
 import re
@@ -11,7 +11,7 @@ import re
 # 1. Oldal konfigurációja
 st.set_page_config(page_title="GYSEV Kocsivizsgáló App", page_icon="🚂", layout="centered")
 
-# --- GOLYÓÁLLÓ ÉKEZETMENTESÍTŐ FUNKCIÓ (Maradt, mert ez a legbiztosabb TTF nélkül) ---
+# --- GOLYÓÁLLÓ ÉKEZETMENTESÍTŐ FUNKCIÓ ---
 def biztonsagos_szoveg(szoveg):
     if not szoveg:
         return ""
@@ -93,7 +93,7 @@ def email_kuldes_dialog(muvelet_nev, statusz_lista):
     )
     
     statusz_szoveg = " | ".join(statusz_lista)
-    subject = f"GYSEV Jelentés - Vonat: {st.session_state.vonatszam_mentett} ({muvelet_nev})"
+    subject = f"GYSEV Jelentes - Vonat: {st.session_state.vonatszam_mentett} ({muvelet_nev})"
     body = f"Tisztelt Cimzett!\n\nMellekelten kuldom a jegyzokonyvet a kovetkezohoz: {muvelet_nev}.\n\nVonatszam: {st.session_state.vonatszam_mentett}\nEredmeny(ek):\n{statusz_szoveg}\n\nUdvözlettel,\n{st.session_state.felhasznalonev}"
     
     mailto_url = f"mailto:?subject={urllib.parse.quote(subject)}&body={urllib.parse.quote(body)}"
@@ -104,7 +104,7 @@ def email_kuldes_dialog(muvelet_nev, statusz_lista):
             st.session_state.show_email_dialog = False
             st.rerun()
 
-# --- ⚙️ MŰVELET KIVÁLASZTÁSA (ÚJ LOGIKA) ---
+# --- ⚙️ MŰVELET KIVÁLASZTÁSA ---
 st.markdown("### 🛠️ Végzett munkafolyamat kiválasztása")
 muvelet_csoport = st.radio("Válassz a fő műveletcsoportok közül:", ["Vonatvizsgálati és RID feladatok", "Fékpróba 🛑"])
 
@@ -143,7 +143,6 @@ col3, col4 = st.columns(2)
 with col3: st.text_input("Vonatszám", key="vonatszam", placeholder="pl. 43122")
 with col4: st.text_input("Vágányszám", key="vaganyszam", placeholder="pl. V.")
 
-# Itt már a dinamikus időfüggvényt hívjuk
 st.text_input("Vizsgálat időpontja", value=aktualis_budapesti_ido(), disabled=True)
 
 # --- 📋 KOCSI-HIBA SZEKCIÓ ---
@@ -221,7 +220,6 @@ if generate_pdf:
     else:
         with st.spinner("PDF dokumentum összeállítása..."):
             try:
-                # ITT KÉRJÜK LE A PONTOS IDŐT GENERÁLÁSKOR
                 pontos_lezarasi_ido = aktualis_budapesti_ido()
                 
                 pdf = FPDF()
@@ -265,26 +263,57 @@ if generate_pdf:
                         pdf.multi_cell(0, 6, biztonsagos_szoveg(kocsi["leiras"]) if kocsi["leiras"] else "Nincs kulon leiras megadva.")
                         pdf.ln(4)
                         
+                        # --- HELYTAKARÉKOS RÁCSOS KÉPELRENDEZÉS A PDF-BEN ---
                         if kocsi["kepek"]:
                             pdf.set_font(font_name, "B", 10)
                             pdf.cell(0, 6, f"Csatolt fotok ({len(kocsi['kepek'])} db):", ln=True)
                             pdf.ln(2)
                             
-                            for img_obj in kocsi["kepek"]:
+                            kep_szelesseg = 90  # Max szélesség (2 kép egymás mellett)
+                            kepek_szama = len(kocsi["kepek"])
+                            max_magassag_sorban = 0
+                            sor_y = pdf.get_y()
+                            
+                            for f_idx, img_obj in enumerate(kocsi["kepek"]):
                                 current_img = img_obj
                                 if current_img.mode in ("RGBA", "P"):
                                     current_img = current_img.convert("RGB")
+                                
+                                img_w, img_h = current_img.size
+                                arany = img_h / img_w
+                                szamitott_magassag = kep_szelesseg * arany
+                                aktualis_szelesseg = kep_szelesseg
+                                
+                                # Álló képek magasság-korlátozása (Max 90 mm)
+                                if szamitott_magassag > 90:
+                                    szamitott_magassag = 90
+                                    aktualis_szelesseg = szamitott_magassag / arany
+                                    
+                                if sor_y + szamitott_magassag > 270:
+                                    pdf.add_page()
+                                    sor_y = pdf.get_y()
+                                    max_magassag_sorban = 0
+                                
+                                # X koordináta számítás (páros balra, páratlan jobbra)
+                                x_poz = 10 if (f_idx % 2 == 0) else 110
                                 
                                 with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
                                     current_img.save(tmp_file, format="JPEG", quality=85)
                                     tmp_img_path = tmp_file.name
                                 
-                                if pdf.get_y() > 200:
-                                    pdf.add_page()
-                                    
-                                pdf.image(tmp_img_path, w=100)
-                                pdf.ln(5)
+                                pdf.image(tmp_img_path, x=x_poz, y=sor_y, w=aktualis_szelesseg)
                                 os.unlink(tmp_img_path)
+                                
+                                if szamitott_magassag > max_magassag_sorban:
+                                    max_magassag_sorban = szamitott_magassag
+                                
+                                # Sorvége vagy legutolsó kép esetén ugrás a következő sorra
+                                if f_idx % 2 != 0 or f_idx == kepek_szama - 1:
+                                    pdf.set_y(sor_y + max_magassag_sorban + 5)
+                                    sor_y = pdf.get_y()
+                                    max_magassag_sorban = 0
+                            
+                            pdf.ln(2)
                         
                         pdf.line(10, pdf.get_y(), 200, pdf.get_y())
                         pdf.ln(5)
