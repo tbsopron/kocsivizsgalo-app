@@ -3,10 +3,68 @@ from fpdf import FPDF
 import tempfile
 import os
 from datetime import datetime
-from PIL import Image  # Képhibák végleges kiküszöbölésére
+from PIL import Image
+import urllib.parse
 
 # 1. Oldal konfigurációja
 st.set_page_config(page_title="GYSEV Kocsivizsgáló App", page_icon="🚂", layout="centered")
+
+# --- GYSEV ARCULAT (Zöld, Sárga, Szürke) DIREKT CSS ---
+st.markdown("""
+    <style>
+        /* Elsődleges gomb (Zöld alapon sárga/fehér szöveg) */
+        div.stButton > button[kind="primary"] {
+            background-color: #007A33 !important; /* GYSEV Zöld */
+            color: #FFFFFF !important;
+            border-radius: 8px;
+            border: 2px solid #FFD100 !important; /* GYSEV Sárga szegély */
+            font-weight: bold;
+        }
+        div.stButton > button[kind="primary"]:hover {
+            background-color: #005F26 !important;
+            color: #FFD100 !important;
+        }
+        
+        /* Másodlagos gomb (Szürke alap, diszkrétebb) */
+        div.stButton > button[kind="secondary"] {
+            background-color: #6C757D !important; /* Diszkrét szürke */
+            color: white !important;
+            border-radius: 8px;
+            border: none;
+        }
+        div.stButton > button[kind="secondary"]:hover {
+            background-color: #5A6268 !important;
+        }
+        
+        /* Letöltés/E-mail gombok (Sárga/Zöld kombinációk a figyelemfelkeltésért) */
+        .mail-button {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            background-color: #FFD100 !important; /* GYSEV Sárga */
+            color: #007A33 !important; /* GYSEV Zöld szöveg */
+            font-weight: bold;
+            text-decoration: none;
+            border-radius: 8px;
+            border: 2px solid #007A33;
+            text-align: center;
+            margin-top: 10px;
+        }
+        .mail-button:hover {
+            background-color: #E6BC00 !important;
+            color: #005F26 !important;
+        }
+        
+        /* Címsor kiemelése */
+        h1 {
+            color: #007A33 !important;
+        }
+        h3 {
+            color: #007A33 !important;
+            border-bottom: 2px solid #FFD100;
+            padding-bottom: 5px;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 st.title("🚂 GYSEV Kocsivizsgáló Webalkalmazás")
 st.write("Műszaki vonatvizsgálati adatok rögzítése és automatikus PDF riport generálása")
@@ -20,6 +78,8 @@ if 'pdf_data' not in st.session_state:
     st.session_state.pdf_data = None
 if 'vonatszam_mentett' not in st.session_state:
     st.session_state.vonatszam_mentett = ""
+if 'show_email_dialog' not in st.session_state:
+    st.session_state.show_email_dialog = False
 
 # --- BIZTONSÁGOS TÖRLÉSI FUNKCIÓ (CALLBACK) ---
 def adatok_torlese_callback():
@@ -31,6 +91,7 @@ def adatok_torlese_callback():
     st.session_state.file_uploader_key += 1
     st.session_state.pdf_data = None
     st.session_state.vonatszam_mentett = ""
+    st.session_state.show_email_dialog = False
 
 # 2. Adatbeviteli mezők elrendezése
 col1, col2 = st.columns(2)
@@ -117,7 +178,7 @@ if generate_pdf:
                     for file in uploaded_files:
                         img = Image.open(file)
                         if img.mode in ("RGBA", "P"):
-                            img = img.convert("RGB")  # Átlátszósági réteg törlése a PDF kompatibilitás miatt
+                            img = img.convert("RGB")
                         
                         with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
                             img.save(tmp_file, format="JPEG", quality=85)
@@ -127,17 +188,57 @@ if generate_pdf:
                         pdf.ln(10)
                         os.unlink(tmp_path)
                 
+                # Mentés memóriába
                 st.session_state.pdf_data = pdf.output(dest="S").encode("latin-1", errors="ignore")
                 st.session_state.vonatszam_mentett = vonatszam
-                st.success("🎉 A PDF jelentés sikeresen elkészült!")
+                
+                # Aktiváljuk a felugró ablak (dialog) logikát
+                st.session_state.show_email_dialog = True
+                st.success("🎉 A PDF jelentés sikeresen elkészült és biztonságban van!")
                 
             except Exception as e:
                 st.error(f"Hiba történt a PDF generálása közben: {e}")
 
-# 4. Letöltés gomb megjelenítése (ha a PDF már elkészült)
-if st.session_state.pdf_data is not None:
+# --- 4. MODERN FELUGRÓ ABLAK (DIALOG) AZ EMAIL KÜLDÉSHEZ ---
+@st.dialog("📧 Küldés e-mailben")
+def email_kuldes_dialog():
+    st.write("Szeretnéd azonnal továbbítani a riportot e-mailben?")
+    st.info("💡 **Fontos:** A PDF-et már biztonságosan legeneráltuk. Először töltsd le az alábbi gombbal, majd az e-mail megnyitása után csatold a letöltött fájlt!")
+    
+    # 1. Lépés: Letöltés (hogy biztosan meglegyen a készüléken)
     st.download_button(
-        label="📥 PDF Fájl Letöltése",
+        label="📥 1. Lépés: PDF Letöltése/Mentése",
+        data=st.session_state.pdf_data,
+        file_name=f"Kocsivizsgalo_Jelentes_{st.session_state.vonatszam_mentett}.pdf",
+        mime="application/pdf",
+        key="dialog_download"
+    )
+    
+    # E-mail tárgy és törzs előkészítése (URL kódolva a mailto linkhez)
+    subject = f"GYSEV Kocsivizsgálati Jelentés - Vonat: {st.session_state.vonatszam_mentett}"
+    body = f"Tisztelt Címzett!\n\nMellékelten küldöm a kocsivizsgálati jelentést.\n\nVonatszám: {st.session_state.vonatszam_mentett}\nIdőpont: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\nÜdvözlettel,\n{st.session_state.felhasznalonev}"
+    
+    mailto_url = f"mailto:?subject={urllib.parse.quote(subject)}&body={urllib.parse.quote(body)}"
+    
+    # 2. Lépés: Küldés gomb (Megnyitja a klienst) és a Mégse gomb egymás mellett
+    d_col1, d_col2 = st.columns(2)
+    with d_col1:
+        # HTML alapú gomb, ami megnyitja a mailto linket új ablakban/kliensben
+        st.markdown(f'<a href="{mailto_url}" target="_blank" class="mail-button">🚀 2. Lépés: OK (E-mail megnyitása)</a>', unsafe_allow_html=True)
+    with d_col2:
+        if st.button("❌ Mégse (Bezárás)", use_container_width=True):
+            st.session_state.show_email_dialog = False
+            st.rerun()
+
+# Ha a PDF kész, és még nem zárták be az ablakot, felugrik a dialógus
+if st.session_state.show_email_dialog and st.session_state.pdf_data is not None:
+    email_kuldes_dialog()
+
+# 5. Statikus Letöltés gomb a főoldalon (ha a felugró ablakot bezárták, de később mégis le kellene tölteni)
+if st.session_state.pdf_data is not None and not st.session_state.show_email_dialog:
+    st.markdown("### 📄 Elkészült jelentés")
+    st.download_button(
+        label="📥 PDF Fájl Letöltése újra",
         data=st.session_state.pdf_data,
         file_name=f"Kocsivizsgalo_Jelentes_{st.session_state.vonatszam_mentett}.pdf",
         mime="application/pdf"
