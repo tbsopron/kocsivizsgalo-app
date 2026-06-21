@@ -221,43 +221,38 @@ for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
         if idx not in st.session_state.file_uploader_keys:
             st.session_state.file_uploader_keys[idx] = 0
             
-        # --- KAMERA ÉS FÁJL FELTÖLTÉS INTEGRÁCIÓ ---
-        st.write(f"*Képek hozzáadása a(z) {idx + 1}. kocsihoz:*")
-        foto_mod = st.radio(
-            "Képforrás kiválasztása:",
-            ["📸 Élő Kamera", "📁 Fájl feltöltése (Galéria)"],
-            key=f"foto_mod_{idx}",
-            horizontal=True,
-            label_visibility="collapsed"
+        # --- KAMERA ÉS FÁJLFELTÖLTŐ EGYÜTTES MEGJELENÍTÉSE ---
+        st.write(f"*Fotók csatolása a(z) {idx + 1}. kocsihoz:*")
+        
+        # 1. Élő kamera modul
+        kamera_foto = st.camera_input(
+            f"📸 Fotó készítése helyben",
+            key=f"kamera_{idx}_{st.session_state.file_uploader_keys[idx]}"
         )
         
-        aktualis_kocsi_kepek = []
+        # 2. Galéria / Fájlfeltöltő modul
+        uploaded_files = st.file_uploader(
+            f"📁 VAGY képek kiválasztása a telefon tárhelyéről/galériájából", 
+            type=["jpg", "jpeg", "png"], 
+            accept_multiple_files=True,
+            key=f"kocsi_foto_{idx}_{st.session_state.file_uploader_keys[idx]}"
+        )
         
-        if foto_mod == "📸 Élő Kamera":
-            kamera_foto = st.camera_input(
-                f"Fotó készítése a(z) {idx + 1}. kocsi hibájáról",
-                key=f"kamera_{idx}_{st.session_state.file_uploader_keys[idx]}"
-            )
-            if kamera_foto:
-                aktualis_kocsi_kepek.append(kamera_foto)
-        else:
-            uploaded_files = st.file_uploader(
-                f"Fotók kiválasztása a galériából", 
-                type=["jpg", "jpeg", "png"], 
-                accept_multiple_files=True,
-                key=f"kocsi_foto_{idx}_{st.session_state.file_uploader_keys[idx]}"
-            )
-            if uploaded_files:
-                aktualis_kocsi_kepek.extend(uploaded_files)
-                
-        st.session_state.hibas_kocsik[idx]["kepek"] = aktualis_kocsi_kepek
+        # Összegyűjtjük az összes létező képet (akár kamerás, akár feltöltött)
+        osszes_kep = []
+        if kamera_foto:
+            osszes_kep.append(kamera_foto)
+        if uploaded_files:
+            osszes_kep.extend(uploaded_files)
+            
+        st.session_state.hibas_kocsik[idx]["kepek"] = osszes_kep
         
-        # Előnézet megjelenítése (akár kamerás, akár feltöltött kép)
-        if aktualis_kocsi_kepek:
+        # Képek előnézetének kirajzolása a felületre, ha vannak
+        if osszes_kep:
             grid_cols = st.columns(4)
-            for f_idx, file in enumerate(aktualis_kocsi_kepek):
+            for f_idx, file in enumerate(osszes_kep):
                 with grid_cols[f_idx % 4]:
-                    st.image(file, caption=f"Kép {f_idx + 1}", use_container_width=True)
+                    st.image(file, caption=f"Csatolt kép {f_idx + 1}", use_container_width=True)
 
 c_btn1, c_btn2, _ = st.columns([1.5, 1.5, 2])
 with c_btn1:
