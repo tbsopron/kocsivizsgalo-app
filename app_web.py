@@ -10,16 +10,27 @@ import re
 # 1. Oldal konfigurációja
 st.set_page_config(page_title="GYSEV Kocsivizsgáló App", page_icon="🚂", layout="centered")
 
-# --- BIZTONSÁGI ÉKEZET-KORREKCIÓS FUNKCIÓ (Minden létező Helvetica hibát kivéd) ---
+# --- GOLYÓÁLLÓ ÉKEZETMENTESÍTŐ FUNKCIÓ (Megszünteti az összes Helvetica kódolási hibát) ---
 def biztonsagos_szoveg(szoveg):
     if not szoveg:
         return ""
-    # Biztonsági konverziós tábla kis- és nagybetűkre egyaránt
+    
+    # Teljes ékezet-eltávolítás a Helvetica kompatibilitás érdekében
     trans_table = str.maketrans({
-        'ő': 'ó', 'Ő': 'Ó',
-        'ű': 'ú', 'Ű': 'Ú'
+        'á': 'a', 'Á': 'A',
+        'é': 'e', 'É': 'E',
+        'í': 'i', 'Í': 'I',
+        'ó': 'o', 'Ó': 'O',
+        'ö': 'o', 'Ö': 'O',
+        'ő': 'o', 'Ő': 'O',
+        'ú': 'u', 'Ú': 'U',
+        'ü': 'u', 'Ü': 'U',
+        'ű': 'u', 'Ű': 'U'
     })
-    return str(szoveg).translate(trans_table)
+    tiszta_szoveg = str(szoveg).translate(trans_table)
+    
+    # Biztonsági kódolási szűrés a PDF-hez
+    return tiszta_szoveg.encode('latin-1', 'replace').decode('latin-1')
 
 # --- GYSEV ARCULAT CSS ---
 st.markdown("""
@@ -130,7 +141,7 @@ def email_kuldes_dialog():
     
     tiszta_muvelet = muvelet.replace(" 🔍", "").replace(" 🛑", "")
     subject = f"GYSEV {tiszta_muvelet} Jelentés - Vonat: {st.session_state.vonatszam_mentett}"
-    body = f"Tisztelt Címzett!\n\nMellékelten küldöm a(z) {tiszta_muvelet} jegyzőkönyvet.\n\nVonatszám: {st.session_state.vonatszam_mentett}\nEredmény: {kivalasztott_statusz}\n\nÜdvözlettel,\n{st.session_state.felhasznalonev}"
+    body = f"Tisztelt Cimzett!\n\nMellekelten kuldom a(z) {tiszta_muvelet} jegyzokonyvet.\n\nVonatszam: {st.session_state.vonatszam_mentett}\nEredmeny: {kivalasztott_statusz}\n\nUdvözlettel,\n{st.session_state.felhasznalonev}"
     
     mailto_url = f"mailto:?subject={urllib.parse.quote(subject)}&body={urllib.parse.quote(body)}"
     
@@ -243,7 +254,7 @@ with btn_col1:
 with btn_col2:
     st.button("🗑️ Adatok törlése", type="secondary", on_click=adatok_torlese_callback)
 
-# 4. PDF Generálása golyóálló karaktervédelemmel
+# 4. PDF Generálása teljesen golyóálló karakterkezeléssel
 if generate_pdf:
     felhasznalonev = st.session_state.felhasznalonev
     szolg_hely = st.session_state.szolg_hely
@@ -263,49 +274,46 @@ if generate_pdf:
                 font_name = 'Helvetica'
                 
                 tiszta_muvelet = muvelet.replace(" 🔍", "").replace(" 🛑", "")
-                
-                # Itt is átfuttatjuk a biztonsági szűrőn, így a "JEGYZŐKÖNYV" szó sem tud hibát dobni
-                cim_szoveg = f"{tiszta_muvelet} JEGYZŐKÖNYV".upper()
+                cim_szoveg = f"{tiszta_muvelet} JEGYZOKONYV".upper()
                 
                 pdf.set_font(font_name, "B", 16)
                 pdf.cell(0, 10, f"{biztonsagos_szoveg(cim_szoveg)}", ln=True, align="C")
                 pdf.ln(10)
                 
                 pdf.set_font(font_name, "", 12)
-                pdf.cell(0, 8, f"{biztonsagos_szoveg('Kocsivizsgáló')}: {biztonsagos_szoveg(felhasznalonev)}", ln=True)
-                pdf.cell(0, 8, f"{biztonsagos_szoveg('Szolgálati hely')}: {biztonsagos_szoveg(szolg_hely)}", ln=True)
-                pdf.cell(0, 8, f"Vonatszám: {biztonsagos_szoveg(vonatszam)}", ln=True)
-                pdf.cell(0, 8, f"Vágányszám: {biztonsagos_szoveg(vaganyszam)}", ln=True)
-                pdf.cell(0, 8, f"{biztonsagos_szoveg('Művelet típusa')}: {biztonsagos_szoveg(tiszta_muvelet)}", ln=True)
-                pdf.cell(0, 8, f"Időpont (Lezárás): {pontos_lezarasi_ido}", ln=True)
+                pdf.cell(0, 8, f"{biztonsagos_szoveg('Kocsivizsgalo')}: {biztonsagos_szoveg(felhasznalonev)}", ln=True)
+                pdf.cell(0, 8, f"{biztonsagos_szoveg('Szolgalati hely')}: {biztonsagos_szoveg(szolg_hely)}", ln=True)
+                pdf.cell(0, 8, f"Vonatszam: {biztonsagos_szoveg(vonatszam)}", ln=True)
+                pdf.cell(0, 8, f"Vaganyszam: {biztonsagos_szoveg(vaganyszam)}", ln=True)
+                pdf.cell(0, 8, f"{biztonsagos_szoveg('Muvelet tipusa')}: {biztonsagos_szoveg(tiszta_muvelet)}", ln=True)
+                pdf.cell(0, 8, f"Idopont (Lezaras): {pontos_lezarasi_ido}", ln=True)
                 pdf.ln(8)
                 
-                # Az eredmény sablonszövegét is biztonságosan kezeljük (.upper előtt szűrünk)
-                eredmeny_szoveg = f"{biztonsagos_szoveg('VIZSGÁLAT EREDMÉNYE')}: {biztonsagos_szoveg(kivalasztott_statusz)}"
+                eredmeny_fejlec = f"{biztonsagos_szoveg('VIZSGALAT EREDMENYE')}: {biztonsagos_szoveg(kivalasztott_statusz)}"
                 pdf.set_font(font_name, "B", 12)
-                pdf.cell(0, 8, eredmeny_szoveg.upper(), ln=True)
+                pdf.cell(0, 8, eredmeny_fejlec.upper(), ln=True)
                 pdf.ln(5)
                 
                 if st.session_state.hibas_kocsik:
                     pdf.set_font(font_name, "B", 14)
-                    pdf.cell(0, 10, f"{biztonsagos_szoveg('ÉRINTETT KOCSIK ÉS ÉSZREVÉTELEK')}:", ln=True)
+                    pdf.cell(0, 10, f"{biztonsagos_szoveg('ERINTETT KOCSIK ES ESZREVETELEK')}:", ln=True)
                     pdf.ln(2)
                     
                     for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
                         pdf.set_font(font_name, "B", 12)
-                        kocsi_fejlec = f"{idx + 1}. Kocsiszám: {biztonsagos_szoveg(kocsi['kocsiszam']) if kocsi['kocsiszam'] else 'Nincs megadva'}"
+                        kocsi_fejlec = f"{idx + 1}. Kocsiszam: {biztonsagos_szoveg(kocsi['kocsiszam']) if kocsi['kocsiszam'] else 'Nincs megadva'}"
                         pdf.cell(0, 8, kocsi_fejlec, ln=True)
                         
                         pdf.set_font(font_name, "", 11)
-                        pdf.cell(0, 6, f"{biztonsagos_szoveg('Részletek / Leírás')}:", ln=True)
+                        pdf.cell(0, 6, f"{biztonsagos_szoveg('Reszletek / Leiras')}:", ln=True)
                         
                         pdf.set_font(font_name, "I", 11)
-                        pdf.multi_cell(0, 6, biztonsagos_szoveg(kocsi["leiras"]) if kocsi["leiras"] else "Nincs külön leírás megadva.")
+                        pdf.multi_cell(0, 6, biztonsagos_szoveg(kocsi["leiras"]) if kocsi["leiras"] else "Nincs kulon leiras megadva.")
                         pdf.ln(4)
                         
                         if kocsi["kepek"]:
                             pdf.set_font(font_name, "B", 10)
-                            pdf.cell(0, 6, f"Csatolt fotók ({len(kocsi['kepek'])} db):", ln=True)
+                            pdf.cell(0, 6, f"Csatolt fotok ({len(kocsi['kepek'])} db):", ln=True)
                             pdf.ln(2)
                             
                             for img_file in kocsi["kepek"]:
@@ -325,7 +333,7 @@ if generate_pdf:
                         pdf.ln(5)
                 else:
                     pdf.set_font(font_name, "I", 12)
-                    pdf.cell(0, 10, f"{biztonsagos_szoveg('Külön listázandó hiba vagy rendellenesség nem lett rögzítve.')}", ln=True)
+                    pdf.cell(0, 10, f"{biztonsagos_szoveg('Kulon listazando hiba vagy rendellenesseg nem lett rogzitve.')}", ln=True)
                 
                 st.session_state.pdf_data = pdf.output()
                 st.session_state.vonatszam_mentett = vonatszam
