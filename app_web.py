@@ -177,7 +177,6 @@ with col3:
 with col4:
     st.text_input("Vágányszám", key="vaganyszam", placeholder="pl. V.")
 
-# Mindig a friss budapesti időt mutatja a képernyőn az oldal újratöltődésekor
 st.text_input("Vizsgálat időpontja (Aktuális idő)", value=aktualis_ido_str, disabled=True)
 
 # --- 📜 DINAMIKUS ERDMÉNY / SABLONVÁLASZTÓ ---
@@ -222,19 +221,43 @@ for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
         if idx not in st.session_state.file_uploader_keys:
             st.session_state.file_uploader_keys[idx] = 0
             
-        uploaded_files = st.file_uploader(
-            f"Fotók csatolása a(z) {idx + 1}. kocsihoz", 
-            type=["jpg", "jpeg", "png"], 
-            accept_multiple_files=True,
-            key=f"kocsi_foto_{idx}_{st.session_state.file_uploader_keys[idx]}"
+        # --- KAMERA ÉS FÁJL FELTÖLTÉS INTEGRÁCIÓ ---
+        st.write(f"*Képek hozzáadása a(z) {idx + 1}. kocsihoz:*")
+        foto_mod = st.radio(
+            "Képforrás kiválasztása:",
+            ["📸 Élő Kamera", "📁 Fájl feltöltése (Galéria)"],
+            key=f"foto_mod_{idx}",
+            horizontal=True,
+            label_visibility="collapsed"
         )
-        st.session_state.hibas_kocsik[idx]["kepek"] = uploaded_files if uploaded_files else []
         
-        if uploaded_files:
+        aktualis_kocsi_kepek = []
+        
+        if foto_mod == "📸 Élő Kamera":
+            kamera_foto = st.camera_input(
+                f"Fotó készítése a(z) {idx + 1}. kocsi hibájáról",
+                key=f"kamera_{idx}_{st.session_state.file_uploader_keys[idx]}"
+            )
+            if kamera_foto:
+                aktualis_kocsi_kepek.append(kamera_foto)
+        else:
+            uploaded_files = st.file_uploader(
+                f"Fotók kiválasztása a galériából", 
+                type=["jpg", "jpeg", "png"], 
+                accept_multiple_files=True,
+                key=f"kocsi_foto_{idx}_{st.session_state.file_uploader_keys[idx]}"
+            )
+            if uploaded_files:
+                aktualis_kocsi_kepek.extend(uploaded_files)
+                
+        st.session_state.hibas_kocsik[idx]["kepek"] = aktualis_kocsi_kepek
+        
+        # Előnézet megjelenítése (akár kamerás, akár feltöltött kép)
+        if aktualis_kocsi_kepek:
             grid_cols = st.columns(4)
-            for f_idx, file in enumerate(uploaded_files):
+            for f_idx, file in enumerate(aktualis_kocsi_kepek):
                 with grid_cols[f_idx % 4]:
-                    st.image(file, caption=file.name, use_container_width=True)
+                    st.image(file, caption=f"Kép {f_idx + 1}", use_container_width=True)
 
 c_btn1, c_btn2, _ = st.columns([1.5, 1.5, 2])
 with c_btn1:
@@ -267,7 +290,6 @@ if generate_pdf:
     else:
         with st.spinner("PDF dokumentum összeállítása..."):
             try:
-                # KRITIKUS JAVÍTÁS: A gombnyomás pillanatában kérjük le a hajszálpontos budapesti időt!
                 pontos_lezarasi_ido = datetime.now(budapest_tz).strftime("%Y-%m-%d %H:%M")
                 
                 pdf = FPDF()
@@ -341,11 +363,10 @@ if generate_pdf:
                     pdf.output(tmp_pdf_file.name)
                     tmp_pdf_path = tmp_pdf_file.name
                 
-                # Nyers bájtok beolvasása a Streamlit számára
                 with open(tmp_pdf_path, "rb") as f:
                     st.session_state.pdf_data = f.read()
                 
-                os.unlink(tmp_pdf_path) # Töröljük a lemezről a temp fájlt
+                os.unlink(tmp_pdf_path)
                 
                 st.session_state.vonatszam_mentett = vonatszam
                 st.session_state.show_email_dialog = True
