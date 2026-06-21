@@ -10,12 +10,10 @@ import re
 # 1. Oldal konfigurációja
 st.set_page_config(page_title="GYSEV Kocsivizsgáló App", page_icon="🚂", layout="centered")
 
-# --- GOLYÓÁLLÓ ÉKEZETMENTESÍTŐ FUNKCIÓ (Megszünteti az összes Helvetica kódolási hibát) ---
+# --- GOLYÓÁLLÓ ÉKEZETMENTESÍTŐ FUNKCIÓ ---
 def biztonsagos_szoveg(szoveg):
     if not szoveg:
         return ""
-    
-    # Teljes ékezet-eltávolítás a Helvetica kompatibilitás érdekében
     trans_table = str.maketrans({
         'á': 'a', 'Á': 'A',
         'é': 'e', 'É': 'E',
@@ -27,10 +25,7 @@ def biztonsagos_szoveg(szoveg):
         'ü': 'u', 'Ü': 'U',
         'ű': 'u', 'Ű': 'U'
     })
-    tiszta_szoveg = str(szoveg).translate(trans_table)
-    
-    # Biztonsági kódolási szűrés a PDF-hez
-    return tiszta_szoveg.encode('latin-1', 'replace').decode('latin-1')
+    return str(szoveg).translate(trans_table)
 
 # --- GYSEV ARCULAT CSS ---
 st.markdown("""
@@ -131,6 +126,7 @@ def email_kuldes_dialog():
     st.write("Szeretnéd azonnal továbbítani a riportot e-mailben?")
     st.info("💡 **Fontos:** Először mentsd el a PDF-et a készülékre, majd a megnyíló e-mailben manuálisan csatold azt!")
     
+    # Itt kapja meg az ellenőrzött nyers bájtokat
     st.download_button(
         label="📥 1. Lépés: PDF Letöltése/Mentése",
         data=st.session_state.pdf_data,
@@ -254,7 +250,7 @@ with btn_col1:
 with btn_col2:
     st.button("🗑️ Adatok törlése", type="secondary", on_click=adatok_torlese_callback)
 
-# 4. PDF Generálása teljesen golyóálló karakterkezeléssel
+# 4. PDF Generálása golyóálló ideiglenes-fájlos bájtolvasással
 if generate_pdf:
     felhasznalonev = st.session_state.felhasznalonev
     szolg_hely = st.session_state.szolg_hely
@@ -270,7 +266,6 @@ if generate_pdf:
                 
                 pdf = FPDF()
                 pdf.add_page()
-                
                 font_name = 'Helvetica'
                 
                 tiszta_muvelet = muvelet.replace(" 🔍", "").replace(" 🛑", "")
@@ -323,11 +318,11 @@ if generate_pdf:
                                 
                                 with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
                                     img.save(tmp_file, format="JPEG", quality=85)
-                                    tmp_path = tmp_file.name
+                                    tmp_img_path = tmp_file.name
                                 
-                                pdf.image(tmp_path, w=90)
+                                pdf.image(tmp_img_path, w=90)
                                 pdf.ln(5)
-                                os.unlink(tmp_path)
+                                os.unlink(tmp_img_path)
                         
                         pdf.line(10, pdf.get_y(), 200, pdf.get_y())
                         pdf.ln(5)
@@ -335,7 +330,17 @@ if generate_pdf:
                     pdf.set_font(font_name, "I", 12)
                     pdf.cell(0, 10, f"{biztonsagos_szoveg('Kulon listazando hiba vagy rendellenesseg nem lett rogzitve.')}", ln=True)
                 
-                st.session_state.pdf_data = pdf.output()
+                # --- GOLYÓÁLLÓ FAJLOS MENTÉS ÉS VISSZAOLVASÁS ---
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf_file:
+                    pdf.output(tmp_pdf_file.name)
+                    tmp_pdf_path = tmp_pdf_file.name
+                
+                # Nyers bájtok beolvasása a Streamlit számára
+                with open(tmp_pdf_path, "rb") as f:
+                    st.session_state.pdf_data = f.read()
+                
+                os.unlink(tmp_pdf_path) # Töröljük a lemezről a temp fájlt
+                
                 st.session_state.vonatszam_mentett = vonatszam
                 st.session_state.show_email_dialog = True
                 st.success("🎉 A jelentés sikeresen elkészült!")
@@ -348,7 +353,7 @@ if generate_pdf:
 if st.session_state.show_email_dialog and st.session_state.pdf_data is not None:
     email_kuldes_dialog()
 
-# 5. Letöltés gomb
+# 5. Letöltés gomb a főoldalon
 if st.session_state.pdf_data is not None and not st.session_state.show_email_dialog:
     st.markdown("### 📄 Elkészült jelentés")
     st.download_button(
