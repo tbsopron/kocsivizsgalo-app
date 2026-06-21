@@ -10,6 +10,20 @@ import re
 # 1. Oldal konfigurációja
 st.set_page_config(page_title="GYSEV Kocsivizsgáló App", page_icon="🚂", layout="centered")
 
+# --- BIZTONSÁGI ÉKEZET-KORREKCIÓS FUNKCIÓ (Ha a betűtípus nem töltene be) ---
+def biztonsagos_szoveg(szoveg, font_name):
+    if not szoveg:
+        return ""
+    if font_name == 'Roboto':
+        return szoveg  # A Roboto natívan támogatja, nincs dolgunk
+    
+    # Ha Helvetica-ra kényszerülünk, az Ő és Ű betűket cseréljük le támogatott karakterekre
+    trans_table = str.maketrans({
+        'ő': 'ó', 'Ő': 'Ó',
+        'ű': 'ú', 'Ű': 'Ú'
+    })
+    return szoveg.translate(trans_table)
+
 # --- GYSEV ARCULAT CSS ---
 st.markdown("""
     <style>
@@ -155,7 +169,7 @@ with col3:
 with col4:
     vaganyszam = st.text_input("Vágányszám", key="vaganyszam", placeholder="pl. V.")
 
-# Mindig a valós, aktuális időt mutatja a felületen
+# Mindig a valós időpont
 st.text_input("Vizsgálat időpontja (Aktuális idő)", value=datetime.now().strftime("%Y-%m-%d %H:%M"), disabled=True)
 
 # --- 📜 DINAMIKUS ERDMÉNY / SABLONVÁLASZTÓ ---
@@ -231,7 +245,7 @@ with btn_col1:
 with btn_col2:
     st.button("🗑️ Adatok törlése", type="secondary", on_click=adatok_torlese_callback)
 
-# 3. PDF Generálása Roboto betűtípussal
+# 3. PDF Generálása abszolút hibatűrő betűtípus-kezeléssel
 if generate_pdf:
     if not felhasznalonev or not szolg_hely or not vonatszam:
         st.error("Hiba: A Felhasználónév, Szolgálati hely és a Vonatszám mezők kitöltése kötelező!")
@@ -243,7 +257,7 @@ if generate_pdf:
                 pdf = FPDF()
                 pdf.add_page()
                 
-                # Betöltjük a Roboto betűtípusokat
+                # Szigorú betűtípus ellenőrzés
                 if os.path.exists("Roboto-Regular.ttf") and os.path.exists("Roboto-Bold.ttf"):
                     pdf.add_font('Roboto', '', 'Roboto-Regular.ttf', uni=True)
                     pdf.add_font('Roboto', 'B', 'Roboto-Bold.ttf', uni=True)
@@ -254,27 +268,27 @@ if generate_pdf:
                 tiszta_muvelet = muvelet.replace(" 🔍", "").replace(" 🛑", "").upper()
                 
                 pdf.set_font(font_name, "B", 16)
-                pdf.cell(0, 10, f"{tiszta_muvelet} JEGYZŐKÖNYV", ln=True, align="C")
+                pdf.cell(0, 10, f"{biztonsagos_szoveg(tiszta_muvelet, font_name)} JEGYZŐKÖNYV", ln=True, align="C")
                 pdf.ln(10)
                 
                 pdf.set_font(font_name, "", 12)
-                pdf.cell(0, 8, f"Kocsivizsgáló: {felhasznalonev}", ln=True)
-                pdf.cell(0, 8, f"Szolgálati hely: {szolg_hely}", ln=True)
-                pdf.cell(0, 8, f"Vonatszám: {vonatszam}", ln=True)
-                pdf.cell(0, 8, f"Vágányszám: {vaganyszam}", ln=True)
-                pdf.cell(0, 8, f"Művelet típusa: {tiszta_muvelet}", ln=True)
+                pdf.cell(0, 8, f"{biztonsagos_szoveg('Kocsivizsgáló', font_name)}: {biztonsagos_szoveg(felhasznalonev, font_name)}", ln=True)
+                pdf.cell(0, 8, f"{biztonsagos_szoveg('Szolgálati hely', font_name)}: {biztonsagos_szoveg(szolg_hely, font_name)}", ln=True)
+                pdf.cell(0, 8, f"Vonatszám: {biztonsagos_szoveg(vonatszam, font_name)}", ln=True)
+                pdf.cell(0, 8, f"Vágányszám: {biztonsagos_szoveg(vaganyszam, font_name)}", ln=True)
+                pdf.cell(0, 8, f"{biztonsagos_szoveg('Művelet típusa', font_name)}: {biztonsagos_szoveg(tiszta_muvelet, font_name)}", ln=True)
                 pdf.cell(0, 8, f"Időpont (Lezárás): {pontos_lezarasi_ido}", ln=True)
                 pdf.ln(8)
                 
                 pdf.set_font(font_name, "B", 12)
-                pdf.cell(0, 8, f"VIZSGÁLAT EREDMÉNYE: {kivalasztott_statusz.upper()}", ln=True)
+                pdf.cell(0, 8, f"{biztonsagos_szoveg('VIZSGÁLAT EREDMÉNYE', font_name)}: {biztonsagos_szoveg(kivalasztott_statusz, font_name).upper()}", ln=True)
                 pdf.ln(5)
                 
                 van_adat = any(kocsi['kocsiszam'] or kocsi['leiras'] or kocsi['kepek'] for kocsi in st.session_state.hibas_kocsik)
                 
                 if van_adat:
                     pdf.set_font(font_name, "B", 14)
-                    pdf.cell(0, 10, "ÉRINTETT KOCSIK ÉS ÉSZREVÉTELEK:", ln=True)
+                    pdf.cell(0, 10, f"{biztonsagos_szoveg('ÉRINTETT KOCSIK ÉS ÉSZREVÉTELEK', font_name)}:", ln=True)
                     pdf.ln(2)
                     
                     for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
@@ -282,14 +296,14 @@ if generate_pdf:
                             continue
                             
                         pdf.set_font(font_name, "B", 12)
-                        kocsi_fejlec = f"{idx + 1}. Kocsiszám: {kocsi['kocsiszam'] if kocsi['kocsiszam'] else 'Nincs megadva'}"
+                        kocsi_fejlec = f"{idx + 1}. Kocsiszám: {biztonsagos_szoveg(kocsi['kocsiszam'], font_name) if kocsi['kocsiszam'] else 'Nincs megadva'}"
                         pdf.cell(0, 8, kocsi_fejlec, ln=True)
                         
                         pdf.set_font(font_name, "", 11)
-                        pdf.cell(0, 6, "Részletek / Leírás:", ln=True)
+                        pdf.cell(0, 6, f"{biztonsagos_szoveg('Részletek / Leírás', font_name)}:", ln=True)
                         
                         pdf.set_font(font_name, "I", 11)
-                        pdf.multi_cell(0, 6, kocsi["leiras"] if kocsi["leiras"] else "Nincs külön leírás megadva.")
+                        pdf.multi_cell(0, 6, biztonsagos_szoveg(kocsi["leiras"], font_name) if kocsi["leiras"] else "Nincs külön leírás megadva.")
                         pdf.ln(4)
                         
                         if kocsi["kepek"]:
@@ -314,7 +328,7 @@ if generate_pdf:
                         pdf.ln(5)
                 else:
                     pdf.set_font(font_name, "I", 12)
-                    pdf.cell(0, 10, "Külön listázandó hiba vagy rendellenesség nem lett rögzítve.", ln=True)
+                    pdf.cell(0, 10, f"{biztonsagos_szoveg('Külön listázandó hiba vagy rendellenesség nem lett rögzítve.', font_name)}", ln=True)
                 
                 st.session_state.pdf_data = pdf.output()
                 st.session_state.vonatszam_mentett = vonatszam
