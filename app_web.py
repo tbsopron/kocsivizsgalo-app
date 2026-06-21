@@ -221,27 +221,38 @@ for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
         if idx not in st.session_state.file_uploader_keys:
             st.session_state.file_uploader_keys[idx] = 0
             
-        # --- BIZTONSÁGOS KÉPFELTÖLTŐ ÉS MENTŐ MODUL ---
-        st.write(f"*Fotó hozzáadása a(z) {idx + 1}. kocsihoz:*")
+        # --- TÖBBFÁJLOS BIZTONSÁGOS KÉPFELTÖLTŐ ---
+        st.write(f"*Fotók hozzáadása a(z) {idx + 1}. kocsihoz (Többet is lőhetsz egymás után):*")
         
-        feltoltott_kep = st.file_uploader(
-            "Fotó készítése (Kamera) vagy kiválasztása (Galéria)", 
+        # Az accept_multiple_files=True engedélyezi, hogy 3-4 vagy több képet is hozzáadjunk egyszerre
+        feltoltott_kepek = st.file_uploader(
+            "Fotók készítése (Kamera) vagy kiválasztása (Galéria)", 
             type=["jpg", "jpeg", "png"], 
+            accept_multiple_files=True,
             key=f"kocsi_foto_{idx}_{st.session_state.file_uploader_keys[idx]}"
         )
         
-        # Ha a felhasználó lőtt új képet, elmentjük fixen a session_state-be
-        if feltoltott_kep is not None:
-            try:
-                img = Image.open(feltoltott_kep)
-                img = ImageOps.exif_transpose(img)  # Elfordulás javítása
-                st.session_state.hibas_kocsik[idx]["kepek"] = [img]
-            except Exception as e:
-                st.error(f"Kép beolvasási hiba: {e}")
+        # Feldolgozzuk az összes képet, amit a kocsivizsgáló lőtt/kiválasztott
+        if feltoltott_kepek:
+            mentett_kepek = []
+            for egy_kep in feltoltott_kepek:
+                try:
+                    img = Image.open(egy_kep)
+                    img = ImageOps.exif_transpose(img)  # Elfordulás javítása mobilon
+                    mentett_kepek.append(img)
+                except Exception as e:
+                    st.error(f"Kép beolvasási hiba: {e}")
+            st.session_state.hibas_kocsik[idx]["kepek"] = mentett_kepek
+        else:
+            st.session_state.hibas_kocsik[idx]["kepek"] = []
                 
-        # Kirajzolás a mentett session_state-ből (így biztosan megmarad a képernyőn!)
+        # Összes csatolt kép előnézetének kirajzolása kis rácsban a képernyőre
         if st.session_state.hibas_kocsik[idx]["kepek"]:
-            st.image(st.session_state.hibas_kocsik[idx]["kepek"][0], caption="Csatolt hiba fotó mentve", use_container_width=True)
+            st.write(f"📸 Csatolt képek száma: {len(st.session_state.hibas_kocsik[idx]['kepek'])} db")
+            grid_cols = st.columns(4)  # Egymás mellé maximum 4 kép előnézete kerül
+            for f_idx, img_obj in enumerate(st.session_state.hibas_kocsik[idx]["kepek"]):
+                with grid_cols[f_idx % 4]:
+                    st.image(img_obj, caption=f"{f_idx + 1}. kép", use_container_width=True)
 
 c_btn1, c_btn2, _ = st.columns([1.5, 1.5, 2])
 with c_btn1:
@@ -262,7 +273,7 @@ with btn_col1:
 with btn_col2:
     st.button("🗑️ Adatok törlése", type="secondary", on_click=adatok_torlese_callback)
 
-# 4. PDF Generálása fpdf könyvtárral
+# 4. PDF Generálása fpdf könyvtárral (Több kép támogatásával)
 if generate_pdf:
     felhasznalonev = st.session_state.felhasznalonev
     szolg_hely = st.session_state.szolg_hely
@@ -318,19 +329,25 @@ if generate_pdf:
                         pdf.multi_cell(0, 6, biztonsagos_szoveg(kocsi["leiras"]) if kocsi["leiras"] else "Nincs kulon leiras megadva.")
                         pdf.ln(4)
                         
+                        # Ha több kép van, mindegyiket beletesszük egymás alá a PDF-be
                         if kocsi["kepek"]:
                             pdf.set_font(font_name, "B", 10)
-                            pdf.cell(0, 6, f"Csatolt foto:", ln=True)
+                            pdf.cell(0, 6, f"Csatolt fotok ({len(kocsi['kepek'])} db):", ln=True)
                             pdf.ln(2)
                             
-                            for img in kocsi["kepek"]:
-                                if img.mode in ("RGBA", "P"):
-                                    img = img.convert("RGB")
+                            for img_obj in kocsi["kepek"]:
+                                current_img = img_obj
+                                if current_img.mode in ("RGBA", "P"):
+                                    current_img = current_img.convert("RGB")
                                 
                                 with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
-                                    img.save(tmp_file, format="JPEG", quality=85)
+                                    current_img.save(tmp_file, format="JPEG", quality=85)
                                     tmp_img_path = tmp_file.name
                                 
+                                # Ha a kép túl közel érne az oldal aljához, új oldalt nyitunk
+                                if pdf.get_y() > 200:
+                                    pdf.add_page()
+                                    
                                 pdf.image(tmp_img_path, w=100)
                                 pdf.ln(5)
                                 os.unlink(tmp_img_path)
