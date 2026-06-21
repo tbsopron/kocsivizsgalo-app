@@ -10,7 +10,7 @@ import re
 # 1. Oldal konfigurációja
 st.set_page_config(page_title="GYSEV Kocsivizsgáló App", page_icon="🚂", layout="centered")
 
-# --- GYSEV ARCULAT CSS ÉS JAVÍTÁSOK ---
+# --- GYSEV ARCULAT CSS ---
 st.markdown("""
     <style>
         div.stButton > button[kind="primary"] {
@@ -32,12 +32,6 @@ st.markdown("""
         }
         div.stButton > button[kind="secondary"]:hover {
             background-color: #5A6268 !important;
-        }
-        /* Rádió gombok (műveletválasztó) finomhangolása */
-        div[data-testid="stRadio"] > label {
-            color: #007A33 !important;
-            font-weight: bold !important;
-            font-size: 16px;
         }
         .mail-button {
             display: inline-block;
@@ -67,6 +61,7 @@ st.markdown("""
             border-radius: 8px;
             margin-bottom: 15px;
             background-color: #F8F9FA;
+            color: #333333;
         }
     </style>
     
@@ -120,13 +115,24 @@ def adatok_torlese_callback():
     st.session_state.vonatszam_mentett = ""
     st.session_state.show_email_dialog = False
 
-# --- ⚙️ MŰVELET KIVÁLASZTÁSA ---
-st.markdown("### 🛠️ Végzett munkafolyamat kiválasztása")
-muvelet = st.radio(
-    "Válassz műveletet:",
-    ["Vonatvizsgálat 🔍", "Fékpróba 🛑"],
-    horizontal=True
-)
+# --- ⚙️ MŰVELET ÉS ÁLLAPOT KIVÁLASZTÁSA ---
+st.markdown("### 🛠️ Végzett munkafolyamat és eredménye")
+col_muv1, col_muv2 = st.columns(2)
+
+with col_muv1:
+    muvelet = st.radio(
+        "Művelet típusa:",
+        ["Vonatvizsgálat 🔍", "Fékpróba 🛑"],
+        horizontal=True
+    )
+
+with col_muv2:
+    if "Fékpróba" in muvelet:
+        sablonszoveg_opciok = ["Fék rendben", "Az alábbi kocsik nem fékeznek:"]
+    else:
+        sablonszoveg_opciok = ["Vonat rendben", "Vonatban a következő hibákat találtam:"]
+        
+    kivalasztott_statusz = st.selectbox("Vizsgálat állapota:", sablonszoveg_opciok)
 
 st.markdown("---")
 
@@ -147,20 +153,14 @@ with col4:
 aktualis_ido_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 st.text_input("Vizsgálat időpontja (Automatikus)", value=aktualis_ido_str, disabled=True)
 
-# --- 📜 DINAMIKUS ERDMÉNY / SABLONVÁLASZTÓ ---
-st.markdown("### 📢 Vizsgálat eredménye / Állapota")
-if "Fékpróba" in muvelet:
-    sablonszoveg_opciok = ["Fék rendben", "Az alábbi kocsik nem fékeznek:"]
-else:
-    sablonszoveg_opciok = ["Vonat rendben", "Vonatban a következő hibákat találtam:"]
-
-kivalasztott_statusz = st.selectbox("Válaszd ki a megfelelő megállapítást:", sablonszoveg_opciok)
+st.markdown("---")
 
 # --- 📋 DINAMIKUS KOCSI-HIBA SZEKCIÓ ---
 st.markdown("### 📋 Észlelt kocsik / hibák részletezése")
 st.caption("Ha a 'rendben' opciót választottad fent, ezt a szekciót üresen is hagyhatod.")
 
 for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
+    # Itt kezdődik a tiszta doboz, nincs felesleges üres HTML elem előtte
     st.markdown(f'<div class="kocsi-box">', unsafe_allow_html=True)
     st.write(f"**{idx + 1}. Érintett kocsi adatai**")
     
@@ -222,23 +222,21 @@ with btn_col1:
 with btn_col2:
     st.button("🗑️ Adatok törlése", type="secondary", on_click=adatok_torlese_callback)
 
-# 3. PDF Generálása kibővített tartalommal
+# 3. PDF Generálása
 if generate_pdf:
     if not felhasznalonev or not szolg_hely or not vonatszam:
         st.error("Hiba: A Felhasználónév, Szolgálati hely és a Vonatszám mezők kitöltése kötelező!")
     else:
-        with st.spinner("PDF dokumentum összeállítása és képek feldolgozása..."):
+        with st.spinner("PDF dokumentum összeállítása..."):
             try:
                 pdf = FPDF()
                 pdf.add_page()
                 
-                # Dinamikus fejléc a választott művelet alapján
                 tiszta_muvelet = muvelet.replace(" 🔍", "").replace(" 🛑", "").upper()
                 pdf.set_font("Arial", "B", 16)
                 pdf.cell(0, 10, f"{tiszta_muvelet} JEGYZOKONYV", ln=True, align="C")
                 pdf.ln(10)
                 
-                # Alapadatok
                 pdf.set_font("Arial", "", 12)
                 pdf.cell(0, 8, f"Kocsivizsgalo: {felhasznalonev}", ln=True)
                 pdf.cell(0, 8, f"Szolgalati hely: {szolg_hely}", ln=True)
@@ -248,12 +246,10 @@ if generate_pdf:
                 pdf.cell(0, 8, f"Idopont: {aktualis_ido_str}", ln=True)
                 pdf.ln(8)
                 
-                # Állapot / Eredmény rögzítése
                 pdf.set_font("Arial", "B", 12)
-                pdf.cell(0, 8, f"VIZSGALAT ERDEMENTE: {kivalasztott_statusz.upper()}", ln=True)
+                pdf.cell(0, 8, f"VIZSGALAT EREDMENYE: {kivalasztott_statusz.upper()}", ln=True)
                 pdf.ln(5)
                 
-                # Csak akkor részletezzük a kocsikat, ha a felhasználó rögzített adatot vagy nem a "rendben" státuszt választotta
                 van_adat = any(kocsi['kocsiszam'] or kocsi['leiras'] or kocsi['kepek'] for kocsi in st.session_state.hibas_kocsik)
                 
                 if van_adat:
@@ -262,7 +258,6 @@ if generate_pdf:
                     pdf.ln(2)
                     
                     for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
-                        # Ha teljesen üres a sor, átugorhatjuk a szép riport érdekében
                         if not kocsi['kocsiszam'] and not kocsi['leiras'] and not kocsi['kepek']:
                             continue
                             
@@ -303,7 +298,8 @@ if generate_pdf:
                 st.session_state.pdf_data = pdf.output(dest="S").encode("latin-1", errors="ignore")
                 st.session_state.vonatszam_mentett = vonatszam
                 st.session_state.show_email_dialog = True
-                st.success("🎉 A strukturált PDF jelentés elkészült!")
+                st.session_state.file_uploader_keys = {k: v for k, v in st.session_state.file_uploader_keys.items()}
+                st.refresh()
                 
             except Exception as e:
                 st.error(f"Hiba történt a PDF generálása közben: {e}")
@@ -317,7 +313,7 @@ def email_kuldes_dialog():
     st.download_button(
         label="📥 1. Lépés: PDF Letöltése/Mentése",
         data=st.session_state.pdf_data,
-        file_name=f"Kocsivizsgalo_Jelentes_{st.session_state.vonatszam_mentett}.pdf",
+        file_name=f"GYSEV_Jelentes_{st.session_state.vonatszam_mentett}.pdf",
         mime="application/pdf",
         key="dialog_download"
     )
@@ -345,6 +341,6 @@ if st.session_state.pdf_data is not None and not st.session_state.show_email_dia
     st.download_button(
         label="📥 PDF Fájl Letöltése újra",
         data=st.session_state.pdf_data,
-        file_name=f"Kocsivizsgalo_Jelentes_{st.session_state.vonatszam_mentett}.pdf",
+        file_name=f"GYSEV_Jelentes_{st.session_state.vonatszam_mentett}.pdf",
         mime="application/pdf"
     )
