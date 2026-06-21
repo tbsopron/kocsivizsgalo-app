@@ -231,38 +231,33 @@ with btn_col1:
 with btn_col2:
     st.button("🗑️ Adatok törlése", type="secondary", on_click=adatok_torlese_callback)
 
-# 3. PDF Generálása fpdf2 felhőkompatibilis módban
+# 3. PDF Generálása Roboto betűtípussal
 if generate_pdf:
     if not felhasznalonev or not szolg_hely or not vonatszam:
         st.error("Hiba: A Felhasználónév, Szolgálati hely és a Vonatszám mezők kitöltése kötelező!")
     else:
         with st.spinner("PDF dokumentum összeállítása és képek feldolgozása..."):
             try:
-                # Dinamikus idő rögzítése PONTOSAN a gomb megnyomásakor
                 pontos_lezarasi_ido = datetime.now().strftime("%Y-%m-%d %H:%M")
                 
-                # FPDF2 példányosítása natív UTF-8 módban
                 pdf = FPDF()
                 pdf.add_page()
                 
-                # Felhő-biztos betűtípus kezelés (ha Windows, betölti az Arialt, ha GitHub szerver, a beépített UTF-8-as Helve-t)
-                try:
-                    pdf.add_font('Arial', '', 'c:/Windows/Fonts/arial.ttf', uni=True)
-                    pdf.add_font('Arial', 'B', 'c:/Windows/Fonts/arialbd.ttf', uni=True)
-                    pdf.set_font("Arial", "B", 16)
-                except:
-                    # Ha GitHub-on fut, a beépített Helvetica fogja vinni az ékezeteket UTF-8-ban
-                    pdf.set_font("Helvetica", "B", 16)
+                # Betöltjük a Roboto betűtípusokat
+                if os.path.exists("Roboto-Regular.ttf") and os.path.exists("Roboto-Bold.ttf"):
+                    pdf.add_font('Roboto', '', 'Roboto-Regular.ttf', uni=True)
+                    pdf.add_font('Roboto', 'B', 'Roboto-Bold.ttf', uni=True)
+                    font_name = 'Roboto'
+                else:
+                    font_name = 'Helvetica'
                 
                 tiszta_muvelet = muvelet.replace(" 🔍", "").replace(" 🛑", "").upper()
+                
+                pdf.set_font(font_name, "B", 16)
                 pdf.cell(0, 10, f"{tiszta_muvelet} JEGYZŐKÖNYV", ln=True, align="C")
                 pdf.ln(10)
                 
-                if 'Arial' in pdf.fonts:
-                    pdf.set_font("Arial", "", 12)
-                else:
-                    pdf.set_font("Helvetica", "", 12)
-                    
+                pdf.set_font(font_name, "", 12)
                 pdf.cell(0, 8, f"Kocsivizsgáló: {felhasznalonev}", ln=True)
                 pdf.cell(0, 8, f"Szolgálati hely: {szolg_hely}", ln=True)
                 pdf.cell(0, 8, f"Vonatszám: {vonatszam}", ln=True)
@@ -271,20 +266,14 @@ if generate_pdf:
                 pdf.cell(0, 8, f"Időpont (Lezárás): {pontos_lezarasi_ido}", ln=True)
                 pdf.ln(8)
                 
-                if 'Arial' in pdf.fonts:
-                    pdf.set_font("Arial", "B", 12)
-                else:
-                    pdf.set_font("Helvetica", "B", 12)
+                pdf.set_font(font_name, "B", 12)
                 pdf.cell(0, 8, f"VIZSGÁLAT EREDMÉNYE: {kivalasztott_statusz.upper()}", ln=True)
                 pdf.ln(5)
                 
                 van_adat = any(kocsi['kocsiszam'] or kocsi['leiras'] or kocsi['kepek'] for kocsi in st.session_state.hibas_kocsik)
                 
                 if van_adat:
-                    if 'Arial' in pdf.fonts:
-                        pdf.set_font("Arial", "B", 14)
-                    else:
-                        pdf.set_font("Helvetica", "B", 14)
+                    pdf.set_font(font_name, "B", 14)
                     pdf.cell(0, 10, "ÉRINTETT KOCSIK ÉS ÉSZREVÉTELEK:", ln=True)
                     pdf.ln(2)
                     
@@ -292,31 +281,19 @@ if generate_pdf:
                         if not kocsi['kocsiszam'] and not kocsi['leiras'] and not kocsi['kepek']:
                             continue
                             
-                        if 'Arial' in pdf.fonts:
-                            pdf.set_font("Arial", "B", 12)
-                        else:
-                            pdf.set_font("Helvetica", "B", 12)
+                        pdf.set_font(font_name, "B", 12)
                         kocsi_fejlec = f"{idx + 1}. Kocsiszám: {kocsi['kocsiszam'] if kocsi['kocsiszam'] else 'Nincs megadva'}"
                         pdf.cell(0, 8, kocsi_fejlec, ln=True)
                         
-                        if 'Arial' in pdf.fonts:
-                            pdf.set_font("Arial", "", 11)
-                        else:
-                            pdf.set_font("Helvetica", "", 11)
+                        pdf.set_font(font_name, "", 11)
                         pdf.cell(0, 6, "Részletek / Leírás:", ln=True)
                         
-                        if 'Arial' in pdf.fonts:
-                            pdf.set_font("Arial", "I", 11)
-                        else:
-                            pdf.set_font("Helvetica", "I", 11)
+                        pdf.set_font(font_name, "I", 11)
                         pdf.multi_cell(0, 6, kocsi["leiras"] if kocsi["leiras"] else "Nincs külön leírás megadva.")
                         pdf.ln(4)
                         
                         if kocsi["kepek"]:
-                            if 'Arial' in pdf.fonts:
-                                pdf.set_font("Arial", "B", 10)
-                            else:
-                                pdf.set_font("Helvetica", "B", 10)
+                            pdf.set_font(font_name, "B", 10)
                             pdf.cell(0, 6, f"Csatolt fotók ({len(kocsi['kepek'])} db):", ln=True)
                             pdf.ln(2)
                             
@@ -336,13 +313,9 @@ if generate_pdf:
                         pdf.line(10, pdf.get_y(), 200, pdf.get_y())
                         pdf.ln(5)
                 else:
-                    if 'Arial' in pdf.fonts:
-                        pdf.set_font("Arial", "I", 12)
-                    else:
-                        pdf.set_font("Helvetica", "I", 12)
+                    pdf.set_font(font_name, "I", 12)
                     pdf.cell(0, 10, "Külön listázandó hiba vagy rendellenesség nem lett rögzítve.", ln=True)
                 
-                # fpdf2 bájtok kinyerése
                 st.session_state.pdf_data = pdf.output()
                 st.session_state.vonatszam_mentett = vonatszam
                 st.session_state.show_email_dialog = True
