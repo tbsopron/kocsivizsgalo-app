@@ -80,30 +80,36 @@ if 'vonatszam_mentett' not in st.session_state:
 if 'show_email_dialog' not in st.session_state:
     st.session_state.show_email_dialog = False
 
-# Dinamikus kocsihiba lista inicializálása (alapból 1 üres elemmel indítunk)
+# Dinamikus kocsihiba lista inicializálása
 if 'hibas_kocsik' not in st.session_state:
     st.session_state.hibas_kocsik = [{"kocsiszam": "", "leiras": "", "kepek": []}]
 
 # --- KOCSISZÁM FORMÁZÓ ÉS ELLENŐRZŐ FUNKCIÓ ---
 def formal_kocsiszam(nyers_szam):
-    # Csak a számokat tartjuk meg
     szamok = re.sub(r'\D', '', nyers_szam)
     if len(szamok) == 12:
-        # Felosztás: 2 szám, 2 szám, 4 szám, 3 szám, 1 szám (XX XX XXXX XXX-X)
         return f"{szamok[0:2]} {szamok[2:4]} {szamok[4:8]} {szamok[8:11]}-{szamok[11]}"
     return nyers_szam
 
-# --- BIZTONSÁGOS TÖRLÉSI FUNKCIÓ (CALLBACK) ---
+# --- BIZTONSÁGOS, TELJES TÖRLÉSI FUNKCIÓ (CALLBACK) ---
 def adatok_torlese_callback():
+    # 1. Alapadatok kiürítése
     st.session_state.felhasznalonev = ""
     st.session_state.szolg_hely = ""
     st.session_state.vonatszam = ""
     st.session_state.vaganyszam = ""
+    
+    # 2. Képfeltöltők kényszerített alaphelyzetbe állítása (kulcsok léptetésével)
+    for kulcs in st.session_state.file_uploader_keys.keys():
+        st.session_state.file_uploader_keys[kulcs] += 1
+        
+    # 3. Kocsik listájának teljes visszaállítása 1 darab teljesen üres mezőre
     st.session_state.hibas_kocsik = [{"kocsiszam": "", "leiras": "", "kepek": []}]
+    
+    # 4. Mentett PDF adatok és ablakok törlése
     st.session_state.pdf_data = None
     st.session_state.vonatszam_mentett = ""
     st.session_state.show_email_dialog = False
-    st.session_state.file_uploader_keys.clear()
 
 # 2. Alapadatok elrendezése
 col1, col2 = st.columns(2)
@@ -124,14 +130,12 @@ st.text_input("Vizsgálat időpontja (Automatikus)", value=aktualis_ido_str, dis
 # --- 📋 DINAMIKUS KOCSI-HIBA SZEKCIÓ ---
 st.markdown("### 📋 Észlelt kocsihibák részletezése")
 
-# Végigmegyünk az eddig felvett kocsik listáján
 for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
     st.markdown(f'<div class="kocsi-box">', unsafe_allow_html=True)
     st.write(f"**{idx + 1}. Hibás kocsi adatai**")
     
     k1, k2 = st.columns([1, 2])
     with k1:
-        # Kocsiszám bevitele
         nyers_kocsiszam = st.text_input(f"Kocsiszám (12 jegyű)", value=kocsi["kocsiszam"], key=f"kocsi_szam_{idx}", placeholder="pl. 315566123451")
         formazott = formal_kocsiszam(nyers_kocsiszam)
         if len(re.sub(r'\D', '', nyers_kocsiszam)) == 12:
@@ -142,7 +146,6 @@ for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
             st.session_state.hibas_kocsik[idx]["kocsiszam"] = nyers_kocsiszam
 
     with k2:
-        # Hiba leírása és kódja
         st.session_state.hibas_kocsik[idx]["leiras"] = st.text_area(
             f"Hiba leírása és kódja ({idx + 1}. kocsi)", 
             value=kocsi["leiras"], 
@@ -151,7 +154,6 @@ for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
             placeholder="pl. 4.2.1 Laposodás a futófelületen, jobb 2-es kerék..."
         )
     
-    # Képfeltöltő kulcs kezelése, hogy törléskor kiürüljön
     if idx not in st.session_state.file_uploader_keys:
         st.session_state.file_uploader_keys[idx] = 0
         
@@ -163,7 +165,6 @@ for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
     )
     st.session_state.hibas_kocsik[idx]["kepek"] = uploaded_files if uploaded_files else []
     
-    # Képek élő előnézete
     if uploaded_files:
         grid_cols = st.columns(4)
         for f_idx, file in enumerate(uploaded_files):
@@ -219,23 +220,20 @@ if generate_pdf:
                 
                 # Kocsihibák bejárása a PDF-ben
                 pdf.set_font("Arial", "B", 14)
-                pdf.cell(0, 10, "ESZLELT KOCSIHIBAK RÉSZLETEZÉSE:", ln=True)
+                pdf.cell(0, 10, "ESZLELT KOCSIHIBAK RESZLETEZESE:", ln=True)
                 pdf.ln(2)
                 
                 for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
-                    # Kocsi blokk címe
                     pdf.set_font("Arial", "B", 12)
                     kocsi_fejlec = f"{idx + 1}. Kocsiszam: {kocsi['kocsiszam'] if kocsi['kocsiszam'] else 'Nincs megadva'}"
                     pdf.cell(0, 8, kocsi_fejlec, ln=True)
                     
-                    # Leírás
                     pdf.set_font("Arial", "", 11)
-                    pdf.cell(0, 6, "Hiba leírása és kódja:", ln=True)
+                    pdf.cell(0, 6, "Hiba leirasa es kodja:", ln=True)
                     pdf.set_font("Arial", "I", 11)
                     pdf.multi_cell(0, 6, kocsi["leiras"] if kocsi["leiras"] else "Nincs leiras megadva.")
                     pdf.ln(4)
                     
-                    # Képek beillesztése ehhez a kocsihoz
                     if kocsi["kepek"]:
                         pdf.set_font("Arial", "B", 10)
                         pdf.cell(0, 6, f"Csatolt fotok ({len(kocsi['kepek'])} db):", ln=True)
@@ -250,12 +248,11 @@ if generate_pdf:
                                 img.save(tmp_file, format="JPEG", quality=85)
                                 tmp_path = tmp_file.name
                             
-                            # Kép hozzáadása (szélesség: 90mm a jobb elrendezésért)
                             pdf.image(tmp_path, w=90)
                             pdf.ln(5)
                             os.unlink(tmp_path)
                     
-                    pdf.line(10, pdf.get_y(), 200, pdf.get_y()) # Elválasztó vonal a kocsik között
+                    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
                     pdf.ln(5)
                 
                 st.session_state.pdf_data = pdf.output(dest="S").encode("latin-1", errors="ignore")
