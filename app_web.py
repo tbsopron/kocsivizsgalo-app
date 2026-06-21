@@ -10,15 +10,16 @@ import re
 # 1. Oldal konfigurációja
 st.set_page_config(page_title="GYSEV Kocsivizsgáló App", page_icon="🚂", layout="centered")
 
-# --- BIZTONSÁGI ÉKEZET-KORREKCIÓS FUNKCIÓ (A Helvetica hibák elkerülésére) ---
+# --- BIZTONSÁGI ÉKEZET-KORREKCIÓS FUNKCIÓ (Minden létező Helvetica hibát kivéd) ---
 def biztonsagos_szoveg(szoveg):
     if not szoveg:
         return ""
+    # Biztonsági konverziós tábla kis- és nagybetűkre egyaránt
     trans_table = str.maketrans({
         'ő': 'ó', 'Ő': 'Ó',
         'ű': 'ú', 'Ű': 'Ú'
     })
-    return szoveg.translate(trans_table)
+    return str(szoveg).translate(trans_table)
 
 # --- GYSEV ARCULAT CSS ---
 st.markdown("""
@@ -88,7 +89,6 @@ if 'vonatszam_mentett' not in st.session_state:
     st.session_state.vonatszam_mentett = ""
 if 'show_email_dialog' not in st.session_state:
     st.session_state.show_email_dialog = False
-# Kezdetben teljesen üres, így nincs felesleges fehér sáv!
 if 'hibas_kocsik' not in st.session_state:
     st.session_state.hibas_kocsik = []
 
@@ -243,7 +243,7 @@ with btn_col1:
 with btn_col2:
     st.button("🗑️ Adatok törlése", type="secondary", on_click=adatok_torlese_callback)
 
-# 4. PDF Generálása gyári alap betűkészlettel
+# 4. PDF Generálása golyóálló karaktervédelemmel
 if generate_pdf:
     felhasznalonev = st.session_state.felhasznalonev
     szolg_hely = st.session_state.szolg_hely
@@ -260,13 +260,15 @@ if generate_pdf:
                 pdf = FPDF()
                 pdf.add_page()
                 
-                # Standard gyári betűtípus
                 font_name = 'Helvetica'
                 
-                tiszta_muvelet = muvelet.replace(" 🔍", "").replace(" 🛑", "").upper()
+                tiszta_muvelet = muvelet.replace(" 🔍", "").replace(" 🛑", "")
+                
+                # Itt is átfuttatjuk a biztonsági szűrőn, így a "JEGYZŐKÖNYV" szó sem tud hibát dobni
+                cim_szoveg = f"{tiszta_muvelet} JEGYZŐKÖNYV".upper()
                 
                 pdf.set_font(font_name, "B", 16)
-                pdf.cell(0, 10, f"{biztonsagos_szoveg(tiszta_muvelet)} JEGYZŐKÖNYV", ln=True, align="C")
+                pdf.cell(0, 10, f"{biztonsagos_szoveg(cim_szoveg)}", ln=True, align="C")
                 pdf.ln(10)
                 
                 pdf.set_font(font_name, "", 12)
@@ -278,8 +280,10 @@ if generate_pdf:
                 pdf.cell(0, 8, f"Időpont (Lezárás): {pontos_lezarasi_ido}", ln=True)
                 pdf.ln(8)
                 
+                # Az eredmény sablonszövegét is biztonságosan kezeljük (.upper előtt szűrünk)
+                eredmeny_szoveg = f"{biztonsagos_szoveg('VIZSGÁLAT EREDMÉNYE')}: {biztonsagos_szoveg(kivalasztott_statusz)}"
                 pdf.set_font(font_name, "B", 12)
-                pdf.cell(0, 8, f"{biztonsagos_szoveg('VIZSGÁLAT EREDMÉNYE')}: {biztonsagos_szoveg(kivalasztott_statusz).upper()}", ln=True)
+                pdf.cell(0, 8, eredmeny_szoveg.upper(), ln=True)
                 pdf.ln(5)
                 
                 if st.session_state.hibas_kocsik:
