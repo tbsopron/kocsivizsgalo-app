@@ -10,17 +10,7 @@ import re
 # 1. Oldal konfigurációja
 st.set_page_config(page_title="GYSEV Kocsivizsgáló App", page_icon="🚂", layout="centered")
 
-# --- ÉKEZETMENTESÍTŐ FUNKCIÓ A STANDARD FPDF-HEZ ---
-def ekezetmentesit(szoveg):
-    if not szoveg:
-        return ""
-    trans_table = str.maketrans(
-        "áéíóöőúüűÁÉÍÓÖŐÚÜŰ",
-        "aeiooouuuAEIOOOUUU"
-    )
-    return szoveg.translate(trans_table)
-
-# --- GYSEV ARCULAT CSS ÉS JAVÍTÁSOK ---
+# --- GYSEV ARCULAT CSS ---
 st.markdown("""
     <style>
         div.stButton > button[kind="primary"] {
@@ -98,14 +88,14 @@ def formal_kocsiszam(nyers_szam):
         return f"{szamok[0:2]} {szamok[2:4]} {szamok[4:8]} {szamok[8:11]}-{szamok[11]}"
     return nyers_szam
 
-# --- TELJES TÖRLÉSI FUNKCIÓ ---
+# --- TELJES TÖRLÉSI FUNKCIÓ (MINDEN MEZŐRE ÉS KOCSIRA) ---
 def adatok_torlese_callback():
     st.session_state.felhasznalonev = ""
     st.session_state.szolg_hely = ""
     st.session_state.vonatszam = ""
     st.session_state.vaganyszam = ""
     
-    for kulcs in st.session_state.file_uploader_keys.keys():
+    for kulcs in list(st.session_state.file_uploader_keys.keys()):
         st.session_state.file_uploader_keys[kulcs] += 1
         
     st.session_state.hibas_kocsik = [{"kocsiszam": "", "leiras": "", "kepek": []}]
@@ -128,8 +118,8 @@ def email_kuldes_dialog():
     )
     
     tiszta_muvelet = muvelet.replace(" 🔍", "").replace(" 🛑", "")
-    subject = f"GYSEV {tiszta_muvelet} Jelentes - Vonat: {st.session_state.vonatszam_mentett}"
-    body = f"Tisztelt Cimzett!\n\nMellekelten kuldom a(z) {tiszta_muvelet} jegyzokonyvet.\n\nVonatszam: {st.session_state.vonatszam_mentett}\nEredmeny: {ekezetmentesit(kivalasztott_statusz)}\n\nUdvözlettel,\n{ekezetmentesit(st.session_state.felhasznalonev)}"
+    subject = f"GYSEV {tiszta_muvelet} Jelentés - Vonat: {st.session_state.vonatszam_mentett}"
+    body = f"Tisztelt Címzett!\n\nMellékelten küldöm a(z) {tiszta_muvelet} jegyzőkönyvet.\n\nVonatszám: {st.session_state.vonatszam_mentett}\nEredmény: {kivalasztott_statusz}\n\nÜdvözlettel,\n{st.session_state.felhasznalonev}"
     
     mailto_url = f"mailto:?subject={urllib.parse.quote(subject)}&body={urllib.parse.quote(body)}"
     
@@ -142,7 +132,7 @@ def email_kuldes_dialog():
             st.rerun()
 
 # --- ⚙️ MŰVELET KIVÁLASZTÁSA ---
-st.markdown("### 🛠️ Végzett munkafolyet kiválasztása")
+st.markdown("### 🛠️ Végzett munkafolyamat kiválasztása")
 muvelet = st.radio(
     "Válassz műveletet:",
     ["Vonatvizsgálat 🔍", "Fékpróba 🛑"],
@@ -165,8 +155,8 @@ with col3:
 with col4:
     vaganyszam = st.text_input("Vágányszám", key="vaganyszam", placeholder="pl. V.")
 
-aktualis_ido_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-st.text_input("Vizsgálat időpontja (Automatikus)", value=aktualis_ido_str, disabled=True)
+# Mindig a valós, aktuális időt mutatja a felületen
+st.text_input("Vizsgálat időpontja (Aktuális idő)", value=datetime.now().strftime("%Y-%m-%d %H:%M"), disabled=True)
 
 # --- 📜 DINAMIKUS ERDMÉNY / SABLONVÁLASZTÓ ---
 st.markdown("### 📢 Vizsgálat eredménye / Állapota")
@@ -241,61 +231,93 @@ with btn_col1:
 with btn_col2:
     st.button("🗑️ Adatok törlése", type="secondary", on_click=adatok_torlese_callback)
 
-# 3. PDF Generálása kibővített tartalommal
+# 3. PDF Generálása fpdf2 felhőkompatibilis módban
 if generate_pdf:
     if not felhasznalonev or not szolg_hely or not vonatszam:
         st.error("Hiba: A Felhasználónév, Szolgálati hely és a Vonatszám mezők kitöltése kötelező!")
     else:
         with st.spinner("PDF dokumentum összeállítása és képek feldolgozása..."):
             try:
+                # Dinamikus idő rögzítése PONTOSAN a gomb megnyomásakor
+                pontos_lezarasi_ido = datetime.now().strftime("%Y-%m-%d %H:%M")
+                
+                # FPDF2 példányosítása natív UTF-8 módban
                 pdf = FPDF()
                 pdf.add_page()
                 
-                # Dinamikus fejléc a választott művelet alapján
+                # Felhő-biztos betűtípus kezelés (ha Windows, betölti az Arialt, ha GitHub szerver, a beépített UTF-8-as Helve-t)
+                try:
+                    pdf.add_font('Arial', '', 'c:/Windows/Fonts/arial.ttf', uni=True)
+                    pdf.add_font('Arial', 'B', 'c:/Windows/Fonts/arialbd.ttf', uni=True)
+                    pdf.set_font("Arial", "B", 16)
+                except:
+                    # Ha GitHub-on fut, a beépített Helvetica fogja vinni az ékezeteket UTF-8-ban
+                    pdf.set_font("Helvetica", "B", 16)
+                
                 tiszta_muvelet = muvelet.replace(" 🔍", "").replace(" 🛑", "").upper()
-                pdf.set_font("Arial", "B", 16)
-                pdf.cell(0, 10, f"{ekezetmentesit(tiszta_muvelet)} JEGYZOKONYV", ln=True, align="C")
+                pdf.cell(0, 10, f"{tiszta_muvelet} JEGYZŐKÖNYV", ln=True, align="C")
                 pdf.ln(10)
                 
-                # Alapadatok
-                pdf.set_font("Arial", "", 12)
-                pdf.cell(0, 8, f"Kocsivizsgalo: {ekezetmentesit(felhasznalonev)}", ln=True)
-                pdf.cell(0, 8, f"Szolgalati hely: {ekezetmentesit(szolg_hely)}", ln=True)
-                pdf.cell(0, 8, f"Vonatszam: {ekezetmentesit(vonatszam)}", ln=True)
-                pdf.cell(0, 8, f"Vaganyszam: {ekezetmentesit(vaganyszam)}", ln=True)
-                pdf.cell(0, 8, f"Muvelet tipusa: {ekezetmentesit(tiszta_muvelet)}", ln=True)
-                pdf.cell(0, 8, f"Idopont: {aktualis_ido_str}", ln=True)
+                if 'Arial' in pdf.fonts:
+                    pdf.set_font("Arial", "", 12)
+                else:
+                    pdf.set_font("Helvetica", "", 12)
+                    
+                pdf.cell(0, 8, f"Kocsivizsgáló: {felhasznalonev}", ln=True)
+                pdf.cell(0, 8, f"Szolgálati hely: {szolg_hely}", ln=True)
+                pdf.cell(0, 8, f"Vonatszám: {vonatszam}", ln=True)
+                pdf.cell(0, 8, f"Vágányszám: {vaganyszam}", ln=True)
+                pdf.cell(0, 8, f"Művelet típusa: {tiszta_muvelet}", ln=True)
+                pdf.cell(0, 8, f"Időpont (Lezárás): {pontos_lezarasi_ido}", ln=True)
                 pdf.ln(8)
                 
-                # Állapot / Eredmény rögzítése
-                pdf.set_font("Arial", "B", 12)
-                pdf.cell(0, 8, f"VIZSGALAT EREDMENYE: {ekezetmentesit(kivalasztott_statusz).upper()}", ln=True)
+                if 'Arial' in pdf.fonts:
+                    pdf.set_font("Arial", "B", 12)
+                else:
+                    pdf.set_font("Helvetica", "B", 12)
+                pdf.cell(0, 8, f"VIZSGÁLAT EREDMÉNYE: {kivalasztott_statusz.upper()}", ln=True)
                 pdf.ln(5)
                 
                 van_adat = any(kocsi['kocsiszam'] or kocsi['leiras'] or kocsi['kepek'] for kocsi in st.session_state.hibas_kocsik)
                 
                 if van_adat:
-                    pdf.set_font("Arial", "B", 14)
-                    pdf.cell(0, 10, "ERINTETT KOCSIK ES ESZREVETELEK:", ln=True)
+                    if 'Arial' in pdf.fonts:
+                        pdf.set_font("Arial", "B", 14)
+                    else:
+                        pdf.set_font("Helvetica", "B", 14)
+                    pdf.cell(0, 10, "ÉRINTETT KOCSIK ÉS ÉSZREVÉTELEK:", ln=True)
                     pdf.ln(2)
                     
                     for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
                         if not kocsi['kocsiszam'] and not kocsi['leiras'] and not kocsi['kepek']:
                             continue
                             
-                        pdf.set_font("Arial", "B", 12)
-                        kocsi_fejlec = f"{idx + 1}. Kocsiszam: {ekezetmentesit(kocsi['kocsiszam'] if kocsi['kocsiszam'] else 'Nincs megadva')}"
+                        if 'Arial' in pdf.fonts:
+                            pdf.set_font("Arial", "B", 12)
+                        else:
+                            pdf.set_font("Helvetica", "B", 12)
+                        kocsi_fejlec = f"{idx + 1}. Kocsiszám: {kocsi['kocsiszam'] if kocsi['kocsiszam'] else 'Nincs megadva'}"
                         pdf.cell(0, 8, kocsi_fejlec, ln=True)
                         
-                        pdf.set_font("Arial", "", 11)
-                        pdf.cell(0, 6, "Reszletek / Leiras:", ln=True)
-                        pdf.set_font("Arial", "I", 11)
-                        pdf.multi_cell(0, 6, ekezetmentesit(kocsi["leiras"] if kocsi["leiras"] else "Nincs kulon leiras megadva."))
+                        if 'Arial' in pdf.fonts:
+                            pdf.set_font("Arial", "", 11)
+                        else:
+                            pdf.set_font("Helvetica", "", 11)
+                        pdf.cell(0, 6, "Részletek / Leírás:", ln=True)
+                        
+                        if 'Arial' in pdf.fonts:
+                            pdf.set_font("Arial", "I", 11)
+                        else:
+                            pdf.set_font("Helvetica", "I", 11)
+                        pdf.multi_cell(0, 6, kocsi["leiras"] if kocsi["leiras"] else "Nincs külön leírás megadva.")
                         pdf.ln(4)
                         
                         if kocsi["kepek"]:
-                            pdf.set_font("Arial", "B", 10)
-                            pdf.cell(0, 6, f"Csatolt fotok ({len(kocsi['kepek'])} db):", ln=True)
+                            if 'Arial' in pdf.fonts:
+                                pdf.set_font("Arial", "B", 10)
+                            else:
+                                pdf.set_font("Helvetica", "B", 10)
+                            pdf.cell(0, 6, f"Csatolt fotók ({len(kocsi['kepek'])} db):", ln=True)
                             pdf.ln(2)
                             
                             for img_file in kocsi["kepek"]:
@@ -314,10 +336,14 @@ if generate_pdf:
                         pdf.line(10, pdf.get_y(), 200, pdf.get_y())
                         pdf.ln(5)
                 else:
-                    pdf.set_font("Arial", "I", 12)
-                    pdf.cell(0, 10, "Kulon listazando hiba vagy rendellenesseg nem lett rogzitve.", ln=True)
+                    if 'Arial' in pdf.fonts:
+                        pdf.set_font("Arial", "I", 12)
+                    else:
+                        pdf.set_font("Helvetica", "I", 12)
+                    pdf.cell(0, 10, "Külön listázandó hiba vagy rendellenesség nem lett rögzítve.", ln=True)
                 
-                st.session_state.pdf_data = pdf.output(dest="S").encode("latin-1", errors="ignore")
+                # fpdf2 bájtok kinyerése
+                st.session_state.pdf_data = pdf.output()
                 st.session_state.vonatszam_mentett = vonatszam
                 st.session_state.show_email_dialog = True
                 st.success("🎉 A strukturált PDF jelentés elkészült!")
@@ -326,7 +352,7 @@ if generate_pdf:
             except Exception as e:
                 st.error(f"Hiba történt a PDF generálása közben: {e}")
 
-# --- DIALÓGUS MEGJELENÍTÉSE A MEGFLELŐ IDŐBEN ---
+# --- DIALÓGUS MEGJELENÍTÉSE ---
 if st.session_state.show_email_dialog and st.session_state.pdf_data is not None:
     email_kuldes_dialog()
 
