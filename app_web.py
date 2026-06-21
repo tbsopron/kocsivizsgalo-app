@@ -120,13 +120,12 @@ def adatok_torlese_callback():
     st.session_state.vonatszam_mentett = ""
     st.session_state.show_email_dialog = False
 
-# --- 📧 EMAIL DIALÓGUS DEKLARÁCIÓ ---
+# --- 📧 EMAIL DIALÓGUS DEKLARÁCIÓ (BIZTONSÁGOSAN PARAMÉTEREZVE) ---
 @st.dialog("📧 Küldés e-mailben")
-def email_kuldes_dialog():
+def email_kuldes_dialog(aktualis_muvelet, statusz):
     st.write("Szeretnéd azonnal továbbítani a riportot e-mailben?")
     st.info("💡 **Fontos:** Először mentsd el a PDF-et a készülékre, majd a megnyíló e-mailben manuálisan csatold azt!")
     
-    # Itt kapja meg az ellenőrzött nyers bájtokat
     st.download_button(
         label="📥 1. Lépés: PDF Letöltése/Mentése",
         data=st.session_state.pdf_data,
@@ -135,9 +134,9 @@ def email_kuldes_dialog():
         key="dialog_download"
     )
     
-    tiszta_muvelet = muvelet.replace(" 🔍", "").replace(" 🛑", "")
+    tiszta_muvelet = aktualis_muvelet.replace(" 🔍", "").replace(" 🛑", "")
     subject = f"GYSEV {tiszta_muvelet} Jelentés - Vonat: {st.session_state.vonatszam_mentett}"
-    body = f"Tisztelt Cimzett!\n\nMellekelten kuldom a(z) {tiszta_muvelet} jegyzokonyvet.\n\nVonatszam: {st.session_state.vonatszam_mentett}\nEredmeny: {kivalasztott_statusz}\n\nUdvözlettel,\n{st.session_state.felhasznalonev}"
+    body = f"Tisztelt Cimzett!\n\nMellekelten kuldom a(z) {tiszta_muvelet} jegyzokonyvet.\n\nVonatszam: {st.session_state.vonatszam_mentett}\nEredmeny: {statusz}\n\nUdvözlettel,\n{st.session_state.felhasznalonev}"
     
     mailto_url = f"mailto:?subject={urllib.parse.quote(subject)}&body={urllib.parse.quote(body)}"
     
@@ -185,7 +184,7 @@ else:
 kivalasztott_statusz = st.selectbox("Válaszd ki a megfelelő megállapítást:", sablonszoveg_opciok)
 
 # --- 📋 DINAMIKUS KOCSI-HIBA SZEKCIÓ ---
-st.markdown("### 📋 Észlelt kocsik / hibák részletezése")
+st.markdown("### 📋 Észlelt kocsik / hibák részletezésese")
 
 if not st.session_state.hibas_kocsik:
     st.info("💡 Minden rendben? Ha hibás kocsit/fotót akarsz hozzáadni, nyomd meg a lenti 'Új kocsi hozzáadása' gombot.")
@@ -349,9 +348,9 @@ if generate_pdf:
             except Exception as e:
                 st.error(f"Hiba történt a PDF generálása közben: {e}")
 
-# --- DIALÓGUS MEGJELENÍTÉSE ---
+# --- DIALÓGUS MEGJELENÍTÉSE (ÁTADVA A KRITIKUS VÁLTOZÓKAT) ---
 if st.session_state.show_email_dialog and st.session_state.pdf_data is not None:
-    email_kuldes_dialog()
+    email_kuldes_dialog(muvelet, kivalasztott_statusz)
 
 # 5. Letöltés gomb a főoldalon
 if st.session_state.pdf_data is not None and not st.session_state.show_email_dialog:
