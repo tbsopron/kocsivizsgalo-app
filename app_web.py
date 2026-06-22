@@ -60,6 +60,8 @@ st.markdown("---")
 if 'file_uploader_keys' not in st.session_state: st.session_state.file_uploader_keys = {}
 if 'pdf_data' not in st.session_state: st.session_state.pdf_data = None
 if 'vonatszam_mentett' not in st.session_state: st.session_state.vonatszam_mentett = ""
+if 'muvelet_nev_mentett' not in st.session_state: st.session_state.muvelet_nev_mentett = ""
+if 'statusz_lista_mentett' not in st.session_state: st.session_state.statusz_lista_mentett = []
 if 'show_email_dialog' not in st.session_state: st.session_state.show_email_dialog = False
 if 'hibas_kocsik' not in st.session_state: st.session_state.hibas_kocsik = []
 
@@ -79,22 +81,28 @@ def adatok_torlese_callback():
     st.session_state.hibas_kocsik = []
     st.session_state.pdf_data = None
     st.session_state.vonatszam_mentett = ""
+    st.session_state.muvelet_nev_mentett = ""
+    st.session_state.statusz_lista_mentett = []
     st.session_state.show_email_dialog = False
 
 # --- 📧 EMAIL DIALÓGUS ---
 @st.dialog("📧 Küldés e-mailben")
-def email_kuldes_dialog(muvelet_nev, statusz_lista):
+def email_kuldes_dialog():
     st.write("Szeretnéd azonnal továbbítani a riportot e-mailben?")
     st.info("💡 **Fontos:** Először mentsd el a PDF-et a készülékre, majd a megnyíló e-mailben manuálisan csatold azt!")
     
+    # EGYEDI FÁJLNÉV GENERÁLÁSA
+    letoltes_ideje = datetime.now().strftime("%H%M%S")
+    fajl_nev = f"GYSEV_Jelentes_{st.session_state.vonatszam_mentett}_{letoltes_ideje}.pdf"
+    
     st.download_button(
         label="📥 1. Lépés: PDF Letöltése/Mentése", data=st.session_state.pdf_data,
-        file_name=f"Kocsivizsgalo_Jelentes_{st.session_state.vonatszam_mentett}.pdf", mime="application/pdf", key="dialog_download"
+        file_name=fajl_nev, mime="application/pdf", key="dialog_download"
     )
     
-    statusz_szoveg = " | ".join(statusz_lista)
-    subject = f"GYSEV Jelentes - Vonat: {st.session_state.vonatszam_mentett} ({muvelet_nev})"
-    body = f"Tisztelt Cimzett!\n\nMellekelten kuldom a jegyzokonyvet a kovetkezohoz: {muvelet_nev}.\n\nVonatszam: {st.session_state.vonatszam_mentett}\nEredmeny(ek):\n{statusz_szoveg}\n\nUdvözlettel,\n{st.session_state.felhasznalonev}"
+    statusz_szoveg = " | ".join(st.session_state.statusz_lista_mentett)
+    subject = f"GYSEV Jelentes - Vonat: {st.session_state.vonatszam_mentett} ({st.session_state.muvelet_nev_mentett})"
+    body = f"Tisztelt Cimzett!\n\nMellekelten kuldom a jegyzokonyvet a kovetkezohoz: {st.session_state.muvelet_nev_mentett}.\n\nVonatszam: {st.session_state.vonatszam_mentett}\nEredmeny(ek):\n{statusz_szoveg}\n\nUdvözlettel,\n{st.session_state.felhasznalonev}"
     
     mailto_url = f"mailto:?subject={urllib.parse.quote(subject)}&body={urllib.parse.quote(body)}"
     d_col1, d_col2 = st.columns(2)
@@ -140,6 +148,7 @@ with col1: st.text_input("Felhasználónév (Kocsivizsgáló)", key="felhasznalo
 with col2: st.text_input("Szolgálati hely", key="szolg_hely", placeholder="pl. Sopron")
 
 col3, col4 = st.columns(2)
+# Nagybetűsítés segítése a vágányszámnál
 with col3: st.text_input("Vonatszám", key="vonatszam", placeholder="pl. 43122")
 with col4: st.text_input("Vágányszám", key="vaganyszam", placeholder="pl. V.")
 
@@ -170,7 +179,7 @@ for idx, kocsi in enumerate(st.session_state.hibas_kocsik):
         if idx not in st.session_state.file_uploader_keys: st.session_state.file_uploader_keys[idx] = 0
         
         feltoltott_kepek = st.file_uploader(
-            "Fotók készítése (Kamera) vagy kiválasztása", type=["jpg", "jpeg", "png"], 
+            "Fotók kiválasztása (Galéria használata javasolt!)", type=["jpg", "jpeg", "png"], 
             accept_multiple_files=True, key=f"kocsi_foto_{idx}_{st.session_state.file_uploader_keys[idx]}"
         )
         
@@ -200,7 +209,10 @@ with c_btn1:
 with c_btn2:
     if len(st.session_state.hibas_kocsik) > 0:
         if st.button("➖ Utolsó kocsi törlése", use_container_width=True):
+            torelendo_idx = len(st.session_state.hibas_kocsik) - 1
             st.session_state.hibas_kocsik.pop()
+            if torelendo_idx in st.session_state.file_uploader_keys:
+                del st.session_state.file_uploader_keys[torelendo_idx]
             st.rerun()
 
 st.markdown("---")
@@ -213,7 +225,7 @@ if generate_pdf:
     felhasznalonev = st.session_state.felhasznalonev
     szolg_hely = st.session_state.szolg_hely
     vonatszam = st.session_state.vonatszam
-    vaganyszam = st.session_state.vaganyszam
+    vaganyszam = st.session_state.vaganyszam.upper() if st.session_state.vaganyszam else ""
 
     if not felhasznalonev or not szolg_hely or not vonatszam or (muvelet_csoport == "Vonatvizsgálati és RID feladatok" and not opciok):
         st.error("Hiba: Felhasználónév, Szolgálati hely, Vonatszám és legalább egy feladat megadása kötelező!")
@@ -263,13 +275,12 @@ if generate_pdf:
                         pdf.multi_cell(0, 6, biztonsagos_szoveg(kocsi["leiras"]) if kocsi["leiras"] else "Nincs kulon leiras megadva.")
                         pdf.ln(4)
                         
-                        # --- HELYTAKARÉKOS RÁCSOS KÉPELRENDEZÉS A PDF-BEN ---
                         if kocsi["kepek"]:
                             pdf.set_font(font_name, "B", 10)
                             pdf.cell(0, 6, f"Csatolt fotok ({len(kocsi['kepek'])} db):", ln=True)
                             pdf.ln(2)
                             
-                            kep_szelesseg = 90  # Max szélesség (2 kép egymás mellett)
+                            kep_szelesseg = 90  
                             kepek_szama = len(kocsi["kepek"])
                             max_magassag_sorban = 0
                             sor_y = pdf.get_y()
@@ -284,7 +295,6 @@ if generate_pdf:
                                 szamitott_magassag = kep_szelesseg * arany
                                 aktualis_szelesseg = kep_szelesseg
                                 
-                                # Álló képek magasság-korlátozása (Max 90 mm)
                                 if szamitott_magassag > 90:
                                     szamitott_magassag = 90
                                     aktualis_szelesseg = szamitott_magassag / arany
@@ -294,7 +304,6 @@ if generate_pdf:
                                     sor_y = pdf.get_y()
                                     max_magassag_sorban = 0
                                 
-                                # X koordináta számítás (páros balra, páratlan jobbra)
                                 x_poz = 10 if (f_idx % 2 == 0) else 110
                                 
                                 with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
@@ -307,7 +316,6 @@ if generate_pdf:
                                 if szamitott_magassag > max_magassag_sorban:
                                     max_magassag_sorban = szamitott_magassag
                                 
-                                # Sorvége vagy legutolsó kép esetén ugrás a következő sorra
                                 if f_idx % 2 != 0 or f_idx == kepek_szama - 1:
                                     pdf.set_y(sor_y + max_magassag_sorban + 5)
                                     sor_y = pdf.get_y()
@@ -329,7 +337,10 @@ if generate_pdf:
                     st.session_state.pdf_data = f.read()
                 os.unlink(tmp_pdf_path)
                 
+                # Állapotok mentése a dialógus előtt
                 st.session_state.vonatszam_mentett = vonatszam
+                st.session_state.muvelet_nev_mentett = muvelet_nev_kombinalt
+                st.session_state.statusz_lista_mentett = kivalasztott_statuszok
                 st.session_state.show_email_dialog = True
                 st.success("🎉 A jelentés sikeresen elkészült!")
                 st.rerun()
@@ -338,8 +349,12 @@ if generate_pdf:
                 st.error(f"Hiba történt a PDF generálása közben: {e}")
 
 if st.session_state.show_email_dialog and st.session_state.pdf_data is not None:
-    email_kuldes_dialog(muvelet_nev_kombinalt, kivalasztott_statuszok)
+    email_kuldes_dialog()
 
+# Vizuális megerősítés, ha már létrejött a fájl és a dialógus be lett zárva
 if st.session_state.pdf_data is not None and not st.session_state.show_email_dialog:
     st.markdown("### 📄 Elkészült jelentés")
-    st.download_button("📥 PDF Fájl Letöltése újra", data=st.session_state.pdf_data, file_name=f"Kocsivizsgalo_Jelentes_{st.session_state.vonatszam_mentett}.pdf", mime="application/pdf")
+    letoltes_ideje = datetime.now().strftime("%H%M%S")
+    fajl_nev = f"GYSEV_Jelentes_{st.session_state.vonatszam_mentett}_{letoltes_ideje}.pdf"
+    st.success(f"✅ Fájl előkészítve: **{fajl_nev}**")
+    st.download_button("📥 PDF Fájl Letöltése újra", data=st.session_state.pdf_data, file_name=fajl_nev, mime="application/pdf")
